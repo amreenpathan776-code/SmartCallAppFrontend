@@ -15,7 +15,7 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import BASE_URL from "./config";
 
 export default function DPDListScreen({ route, navigation }) {
-const { dpdQueue, userId } = route.params;
+  const { dpdQueue, userId } = route.params;
 
   const [data, setData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
@@ -23,45 +23,39 @@ const { dpdQueue, userId } = route.params;
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchDPDData();
-  }, []);
-useFocusEffect(
-  useCallback(() => {
-    fetchDPDData();
-  }, [dpdQueue, userId])
-);
+  useFocusEffect(
+    useCallback(() => {
+      fetchDPDData();
+    }, [dpdQueue, userId])
+  );
 
-const fetchDPDData = async () => {
-  try {
-    const response = await fetch(`${BASE_URL}/api/dpd-list`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        dpdQueue,
-        userId,
-      }),
-    });
+  const fetchDPDData = async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/api/dpd-list`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dpdQueue, userId }),
+      });
 
-    const result = await response.json();
-    const records = result.records || [];
+      const result = await response.json();
+      const records = result.records || [];
 
-    setData(records);
-    setFilteredData(records);
-    setLoading(false);
-  } catch (error) {
-    console.error("DPD Fetch Error:", error);
-    setLoading(false);
-  }
-};
-const onRefresh = async () => {
-  setRefreshing(true);
-  await fetchDPDData();
-  setRefreshing(false);
-};
+      setData(records);
+      setFilteredData(records);
+      setLoading(false);
+    } catch (error) {
+      console.error("DPD Fetch Error:", error);
+      setLoading(false);
+    }
+  };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchDPDData();
+    setRefreshing(false);
+  };
 
-  /* ===== SEARCH ===== */
+  /* SEARCH */
   const handleSearch = (text) => {
     setSearchText(text);
 
@@ -82,77 +76,75 @@ const onRefresh = async () => {
     setFilteredData(filtered);
   };
 
-  /* ===== EACH CARD ===== */
-const renderItem = ({ item }) => (
-<TouchableOpacity
-  style={[
-    styles.card,
-    item.AccountStatus !== "PENDING" && { opacity: 0.6 } // ✅ visually disabled
-  ]}
-  activeOpacity={item.AccountStatus === "PENDING" ? 0.7 : 1}
-onPress={() => {
-  if (item.AccountStatus !== "PENDING") {
-    Alert.alert(
-      "Not Allowed",
-      "This account is already IN PROCESS / COMPLETED. Please open it from Schedule For The Day."
-    );
-    return;
-  }
-
-navigation.navigate("AccountDetails", {
-  loanAccountNumber: item.loanAccountNumber,
-  visitSource: "ASSIGNED",
-});
-
-}}
-
->
-
-<View style={styles.nameRow}>
-  <Text style={styles.name}>{item.firstname}</Text>
-
-  {/* ✅ STATUS BADGE */}
-  {item.AccountStatus ? (
-    <View
+  /* CARD */
+  const renderItem = ({ item }) => (
+    <TouchableOpacity
       style={[
-        styles.statusBadge,
-        item.AccountStatus === "IN PROCESS"
-          ? styles.statusInProcess
-          : item.AccountStatus === "COMPLETED"
-          ? styles.statusCompleted
-          : styles.statusPending,
+        styles.card,
+        item.AccountStatus !== "PENDING" && { opacity: 0.6 },
       ]}
+      activeOpacity={item.AccountStatus === "PENDING" ? 0.7 : 1}
+      onPress={() => {
+        if (item.AccountStatus !== "PENDING") {
+          Alert.alert(
+            "Not Allowed",
+            "This account is already IN PROCESS / COMPLETED. Please open it from Schedule For The Day."
+          );
+          return;
+        }
+
+        navigation.navigate("AccountDetails", {
+          loanAccountNumber: item.loanAccountNumber,
+          visitSource: "ASSIGNED",
+        });
+      }}
     >
-      <Text style={styles.statusText}>{item.AccountStatus}</Text>
-    </View>
-  ) : null}
+<View style={styles.nameRow}>
+  
+  {/* 👤 PERSON ICON + NAME */}
+  <View style={styles.personRow}>
+    <Ionicons name="person-circle" size={22} color="#0a3d62" />
+    <Text style={styles.name}>{item.firstname}</Text>
+  </View>
+{item.AccountStatus && (
+          <View
+style={[
+    styles.statusBadge,
+    item.AccountStatus === "IN PROCESS"
+      ? styles.statusInProcess
+      : item.AccountStatus === "COMPLETED"
+      ? styles.statusCompleted
+      : styles.statusPending,
+  ]}
+>
+  <Text
+    style={[
+      styles.statusText,
+      item.AccountStatus === "IN PROCESS" && { color: "#000" },
+      item.AccountStatus === "COMPLETED" && { color: "#000" },
+      item.AccountStatus === "PENDING" && { color: "#fff" },
+    ]}
+  >
+    {item.AccountStatus}
+  </Text>
 </View>
 
-    <Text style={styles.sub}>
-      Loan A/c: {item.loanAccountNumber}
-    </Text>
-
-    <View style={styles.row}>
-      <Text>📞 {item.mobileNumber}</Text>
-      <Text style={styles.amount}>
-        ₹{item.currentOutstandingBalance}
-      </Text>
-    </View>
-
-    <View style={styles.actions}>
-      <View style={styles.iconBtn}>
-        <Ionicons name="call" size={18} color="#0a3d62" />
-        <Text style={styles.iconText}>Call</Text>
+        )}
       </View>
 
-      <View style={styles.iconBtn}>
-        <Ionicons name="location" size={18} color="#27ae60" />
-        <Text style={styles.iconText}>Visit</Text>
-      </View>
-    </View>
-  </TouchableOpacity>
-);
+      <Text style={styles.sub}>Loan A/c: {item.loanAccountNumber}</Text>
 
+  <View style={styles.row}>
+  <View style={styles.phoneRow}>
+    <Ionicons name="call" size={18} color="#27ae60" />
+    <Text style={styles.phoneText}>{item.mobileNumber}</Text>
+  </View>
+
+  <Text style={styles.amount}>₹ {item.overdueAmount}</Text>
+</View>
+
+    </TouchableOpacity>
+  );
 
   if (loading) {
     return (
@@ -170,7 +162,6 @@ navigation.navigate("AccountDetails", {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-
         <Text style={styles.headerTitle}>DPD Accounts</Text>
         <View style={{ width: 24 }} />
       </View>
@@ -187,25 +178,23 @@ navigation.navigate("AccountDetails", {
       </View>
 
       {/* LIST */}
-<FlatList
-  data={filteredData}
-  keyExtractor={(item, index) => index.toString()}
-  renderItem={renderItem}
-  contentContainerStyle={{ padding: 10 }}
-  refreshControl={
-    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-  }
-  ListEmptyComponent={
-    <Text style={{ textAlign: "center", marginTop: 20 }}>
-      No records found
-    </Text>
-  }
-/>
+      <FlatList
+        data={filteredData}
+        keyExtractor={(item, index) => index.toString()}
+        renderItem={renderItem}
+        contentContainerStyle={{ padding: 10 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        ListEmptyComponent={
+          <Text style={{ textAlign: "center", marginTop: 20 }}>
+            No records found
+          </Text>
+        }
+      />
     </View>
   );
 }
-
-/* ===== STYLES ===== */
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f4f6f9" },
@@ -219,11 +208,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingTop: 20,
   },
-  headerTitle: {
-    color: "#fff",
-    fontSize: 17,
-    fontWeight: "600",
-  },
+
+  headerTitle: { color: "#fff", fontSize: 17, fontWeight: "600" },
 
   searchContainer: {
     flexDirection: "row",
@@ -234,17 +220,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     elevation: 2,
   },
-  searchInput: {
-    flex: 1,
-    padding: 8,
-    fontSize: 14,
-  },
 
-  loader: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  searchInput: { flex: 1, padding: 8, fontSize: 14 },
+
+  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
 
   card: {
     backgroundColor: "#fff",
@@ -253,70 +232,44 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     elevation: 2,
   },
-  name: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#0a3d62",
-  },
-  sub: {
-    fontSize: 12,
-    color: "#555",
-    marginBottom: 6,
-  },
-  row: {
+
+  nameRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-
-    marginBottom: 8,
-  },
-  amount: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#c0392b",
-  },
-
-  actions: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
-    paddingTop: 8,
-  },
-  iconBtn: {
     alignItems: "center",
   },
-  iconText: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  nameRow: {
+
+  name: { fontSize:14,fontWeight: "700", color: "#0a3d62" },
+
+
+  sub: { fontSize: 12, color: "#555", marginBottom: 6 },
+
+  row: { flexDirection: "row", justifyContent: "space-between" },
+
+  amount: { fontSize: 14, fontWeight: "700", color: "#c0392b" },
+
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+
+  statusText: { fontSize: 10, fontWeight: "700", color: "#fff" },
+
+statusInProcess: { backgroundColor: "#f39c12" }, // ORANGE
+statusCompleted: { backgroundColor: "#27ae60" }, // GREEN
+statusPending: { backgroundColor: "#676463" },   // RED
+
+  phoneRow: {
   flexDirection: "row",
-  justifyContent: "space-between",
   alignItems: "center",
+  gap: 6,
 },
 
-statusBadge: {
-  paddingHorizontal: 10,
-  paddingVertical: 4,
-  borderRadius: 20,
+phoneText: {
+  fontSize: 13,
+  color: "#333",
 },
-
-statusText: {
-  fontSize: 10,
-  fontWeight: "700",
-  color: "#fff",
-},
-
-statusInProcess: {
-  backgroundColor: "#f39c12", // orange
-},
-
-statusCompleted: {
-  backgroundColor: "#27ae60", // green
-},
-
-statusPending: {
-  backgroundColor: "#7f8c8d", // grey
+personRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 6,
 },
 
 });

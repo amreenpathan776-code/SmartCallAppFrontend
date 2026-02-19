@@ -25,18 +25,18 @@ import {
   getCoordsFromAddressGoogle,
   getAddressFromCoordsGoogle   // ⭐ ADD THIS
 } from "./LocationService";
-
-
 const ThreeActionButtons = ({
   onSubmit,
   onScheduleCall,
   onScheduleVisit,
-
-  // ✅ add these new props
   logCallAction,
   reasonCode = null,
-  actionSource = "CALL", // CALL / VISIT
+  actionSource = "CALL",
+
+  // ⭐ NEW PROP
+  exitToDPDList,
 }) => {
+
   const safeLog = async (payload) => {
     try {
       if (typeof logCallAction === "function") {
@@ -64,9 +64,16 @@ const ThreeActionButtons = ({
           });
 
           // run old submit
-          if (typeof onSubmit === "function") {
-            await onSubmit();
-          }
+// run old submit if needed (optional business logic)
+if (typeof onSubmit === "function") {
+  await onSubmit();
+}
+
+// ⭐ CLOSE FLOW & GO BACK TO DPD LIST
+if (typeof exitToDPDList === "function") {
+  await exitToDPDList();
+}
+
         }}
       >
         <View style={styles.optionLeft}>
@@ -687,6 +694,25 @@ const [stopAddress, setStopAddress] = useState("");
 const [currentVisitSNo, setCurrentVisitSNo] = useState(null);
 const [startLocation, setStartLocation] = useState(null);
 const [startAddress, setStartAddress] = useState("");
+// ⭐ UNIVERSAL EXIT AFTER SUBMIT
+const exitToDPDList = async () => {
+  try {
+    if (callSessionId) {
+      await endCallSession();
+    }
+
+    setFlowStack([]);
+    setShowCallFlowModal(false);
+    setShowCallModal(false);
+    setCallStage("IDLE");
+    setCalendarMode(null);
+
+    // ⭐ THIS IS THE IMPORTANT PART
+    navigation.goBack();   // 🔥 go back to DPD LIST
+  } catch (e) {
+    console.log("Exit error", e);
+  }
+};
 
   // ✅ VISIT START: capture location first then open visit modal
 // 🚀 MASTER START VISIT (TODAY + UNSCHEDULED USE SAME)
@@ -1255,44 +1281,7 @@ const handleCallNow = async () => {
           <DetailRow label="Pincode" value={account.pincode || "-"} />
           <DetailRow label="Scheduled Time" value="-" />
           <DetailRow label="Mobile No." value={account.mobileNumber} />
-{/* LOCATION */}
-<View style={styles.row}>
-  <Text style={styles.label}>Location</Text>
 
-  <TouchableOpacity style={styles.captureBtn} onPress={handleCaptureLocation}>
-    <Text style={styles.captureText}>Capture</Text>
-    <Ionicons name="location" size={16} color="#fff" />
-  </TouchableOpacity>
-</View>
-
-{/* ✅ show captured location BELOW row */}
-{capturedLocation && (
-  <Text style={{ marginTop: 6, color: "#334155", fontSize: 13 }}>
-    ✅ Lat: {capturedLocation.latitude}, Lng: {capturedLocation.longitude}
-  </Text>
-)}
-
-{capturedAddress ? (
-  <Text style={{ marginTop: 6, color: "#0f172a", fontSize: 13 }}>
-    📍 Address: {capturedAddress}
-  </Text>
-) : null}
-
-{/* ✅ Show Google Maps button ONLY after Capture */}
-{capturedLocation && capturedAddress ? (
-  <View style={{ flexDirection: "row", justifyContent: "flex-end", marginTop: 6 }}>
-    <TouchableOpacity
-      style={styles.mapMiniBtn}
-      activeOpacity={0.85}
-      onPress={() =>
-        openInGoogleMaps(capturedLocation.latitude, capturedLocation.longitude)
-      }
-    >
-      <Ionicons name="navigate" size={14} color="#fff" style={{ marginRight: 6 }} />
-      <Text style={styles.mapMiniText}>Google Maps</Text>
-    </TouchableOpacity>
-  </View>
-) : null}
           {/* ALTERNATE NUMBER */}
           <View style={styles.row}>
             <Text style={styles.label}>Alternate Number</Text>
@@ -1419,24 +1408,26 @@ onPress={async () => {
         {!calendarMode && (
 <>
   {showThreeActionAfterCloseNo && (
-    <ThreeActionButtons
-      logCallAction={logCallAction}
-      reasonCode="CLOSE_ACCOUNT_NO"
-      onSubmit={async () => {
-        await endCallSession();
-        Alert.alert("Submitted", "Follow-up recorded");
-        setShowThreeActionAfterCloseNo(false);
-        resetVisitFlow();
-      }}
-      onScheduleCall={() => {
-        setCalendarMode("CLOSE_ACCOUNT_NO_CALL");
-        setShowThreeActionAfterCloseNo(false);
-      }}
-      onScheduleVisit={() => {
-        setCalendarMode("CLOSE_ACCOUNT_NO_VISIT");
-        setShowThreeActionAfterCloseNo(false);
-      }}
-    />
+<ThreeActionButtons
+  logCallAction={logCallAction}
+  reasonCode="CLOSE_ACCOUNT_NO"
+  exitToDPDList={exitToDPDList}
+
+  onSubmit={async () => {
+    Alert.alert("Submitted", "Follow-up recorded");
+  }}
+
+  onScheduleCall={() => {
+    setCalendarMode("CLOSE_ACCOUNT_NO_CALL");
+    setShowThreeActionAfterCloseNo(false);
+  }}
+
+  onScheduleVisit={() => {
+    setCalendarMode("CLOSE_ACCOUNT_NO_VISIT");
+    setShowThreeActionAfterCloseNo(false);
+  }}
+/>
+
   )}
 
 {callStage === "AFTER_CALL" && !showThreeActionAfterCloseNo && (
@@ -1947,35 +1938,29 @@ onPress={() => {
  spokeChoice === "NOT_READY" &&
  notReadyChoice === "LUMPSUM" && (
 
-  <ThreeActionButtons
-onSubmit={async () => {
-  await logCallAction({
-    actionCode: "CALL_COMPLETED",
-    actionLabel: "Call Flow Completed",
-    reasonCode: "LUMPSUM",
-  });
+<ThreeActionButtons
+  logCallAction={logCallAction}
+  reasonCode="LUMPSUM"
+  exitToDPDList={exitToDPDList}
 
-  await endCallSession();
+  onSubmit={async () => {
+  }}
 
-  Alert.alert("Submitted", "Lump sum commitment recorded");
-  resetVisitFlow();
-}}
+  onScheduleCall={() => {
+    setLumpSumScheduleType("CALL");
+    setCalendarMode("LUMPSUM_CALL");
+    setSpokeChoice(null);
+    setNotReadyChoice(null);
+  }}
 
+  onScheduleVisit={() => {
+    setLumpSumScheduleType("VISIT");
+    setCalendarMode("LUMPSUM_VISIT");
+    setSpokeChoice(null);
+    setNotReadyChoice(null);
+  }}
+/>
 
-onScheduleCall={() => {
-  setLumpSumScheduleType("CALL");
-  setCalendarMode("LUMPSUM_CALL");
-  setSpokeChoice(null);        // 👈 KEY
-  setNotReadyChoice(null);     // 👈 KEY
-}}
-onScheduleVisit={() => {
-  setLumpSumScheduleType("VISIT");
-  setCalendarMode("LUMPSUM_VISIT");
-  setSpokeChoice(null);        // 👈 KEY
-  setNotReadyChoice(null);     // 👈 KEY
-}}
-
-  />
 )}
 
 {callStage === "SPOKE" &&
@@ -2265,9 +2250,6 @@ onPress={async () => {
       foName,
     },
   });
-
-  Alert.alert("Saved", "FO visit details captured");
-
   setFoVisitDate(null);
   setFoName("");
   setShowFoDatePicker(false);
@@ -2316,12 +2298,9 @@ onPress={async () => {
     actionLabel: "Call Flow Completed",
     reasonCode: "FO_NOT_VISITED",
   });
-
-  await endCallSession();
-
-  Alert.alert("Submitted", "FO not visited recorded");
-  resetVisitFlow();
+  await exitToDPDList();
 }}
+
 
     >
       <View style={styles.optionLeft}>
@@ -2442,13 +2421,8 @@ onPress={async () => {
     actionLabel: "Call Flow Completed",
     reasonCode: "NOT_TAKEN_LOAN",
   });
-
-  await endCallSession();
-
-  Alert.alert("Submitted", "Marked as not taken loan");
-  resetVisitFlow();
+  await exitToDPDList();
 }}
-
     >
       <View style={styles.optionLeft}>
         <Ionicons
@@ -2697,10 +2671,6 @@ onPress={async () => {
       contact: relativeContact,
     },
   });
-
-  Alert.alert("Saved", "Relative details captured");
-
-  // ✅ open ThreeActionButtons next
   setRelativeFlow("OPTIONS");
 }}
 
@@ -2719,7 +2689,7 @@ onPress={async () => {
   <ThreeActionButtons
     logCallAction={logCallAction}
     reasonCode="LOAN_BY_RELATIVE"
-
+    exitToDPDList={exitToDPDList}
     onSubmit={async () => {
       await logCallAction({
         actionCode: "CALL_COMPLETED",
@@ -2728,7 +2698,6 @@ onPress={async () => {
       });
 
       await endCallSession();
-      Alert.alert("Submitted", "Relative loan case saved");
       resetVisitFlow();
 
       setRelativeFlow(null);
@@ -2762,43 +2731,28 @@ onPress={async () => {
  spokeChoice === "NOT_READY" &&
  notReadyChoice === "LOAN_BY_RELATIVE" &&
  relativeFlow === "SKIP" && (
+<ThreeActionButtons
+  logCallAction={logCallAction}
+  reasonCode="LOAN_BY_RELATIVE"
+  exitToDPDList={exitToDPDList}
 
-  <ThreeActionButtons
-onSubmit={async () => {
-  await logCallAction({
-    actionCode: "CALL_COMPLETED",
-    actionLabel: "Call Flow Completed",
-    reasonCode: "LOAN_BY_RELATIVE",
-  });
+  onSubmit={async () => {
+    setRelativeFlow(null);
+  }}
 
-  await endCallSession();
+  onScheduleCall={() => {
+    setRelativeScheduleType("CALL");
+    setCalendarMode("RELATIVE_CALL");
+    setRelativeFlow(null);
+  }}
 
-  Alert.alert("Submitted", "Loan by relative noted");
-  resetVisitFlow();
-}}
-onScheduleCall={async () => {
-  await logCallAction({
-    actionCode: "SCHEDULE_CALL",
-    actionLabel: "Schedule a Call",
-    reasonCode: "LOAN_BY_RELATIVE",
-  });
+  onScheduleVisit={() => {
+    setRelativeScheduleType("VISIT");
+    setCalendarMode("RELATIVE_VISIT");
+    setRelativeFlow(null);
+  }}
+/>
 
-  setRelativeScheduleType("CALL");
-  setCalendarMode("RELATIVE_CALL");
-}}
-
-onScheduleVisit={async () => {
-  await logCallAction({
-    actionCode: "SCHEDULE_VISIT",
-    actionLabel: "Schedule a Visit",
-    reasonCode: "LOAN_BY_RELATIVE",
-  });
-
-  setRelativeScheduleType("VISIT");
-  setCalendarMode("RELATIVE_VISIT");
-}}
-
-  />
 )}
 {callStage === "SPOKE" &&
  spokeChoice === "NOT_READY" &&
@@ -2814,10 +2768,6 @@ onScheduleVisit={async () => {
         reasonCode: "NOT_READY_OTHERS",
         noteText: otherReason,
       });
-
-      Alert.alert("Saved", "Reason recorded");
-
-      // ✅ OPEN ThreeActionButtons now
       setShowReasonNextActions(true);
     }}
   />
@@ -2833,10 +2783,6 @@ onScheduleVisit={async () => {
         reasonCode: "SPOKE_OTHERS",
         noteText: otherReason,
       });
-
-      Alert.alert("Saved", "Reason recorded");
-
-      // ✅ OPEN ThreeActionButtons now
       setShowReasonNextActions(true);
     }}
   />
@@ -2845,16 +2791,11 @@ onScheduleVisit={async () => {
   <ThreeActionButtons
     logCallAction={logCallAction}
     reasonCode="OTHERS_REASON"
+  exitToDPDList={exitToDPDList}
+ onSubmit={async () => {
+  setShowReasonNextActions(false);
+}}
 
-    onSubmit={async () => {
-      // ✅ ThreeActionButtons already logs CALL_COMPLETED
-      await endCallSession();
-
-      Alert.alert("Submitted", "Saved successfully");
-
-      setShowReasonNextActions(false);
-      resetVisitFlow();
-    }}
 
     onScheduleCall={() => {
       // ✅ ThreeActionButtons already logs SCHEDULE_CALL
@@ -3261,22 +3202,21 @@ onPress={() => {
           },
         });
 
-        Alert.alert(
-          "Scheduled",
-          `${modeForDB} scheduled on ${selectedDate} at ${hour}:${minute} ${ampm}`
-        );
+    // ✅ End call session first
+await endCallSession();
 
-        // ✅ reset UI
-        setCalendarMode(null);
-        setSelectedDate("");
-        setHour("");
-        setMinute("");
-        setAmpm("AM");
+// ✅ Close call modal
+setShowCallFlowModal(false);
+setShowCallModal(false);
 
-        setInvalidNumberFlow(false);
-        setDidNotSpeakChoice(null);
-        setPhysicalVisitReason(null);
-        setCallStage("IDLE");
+// ✅ Reset entire flow
+setFlowStack([]);
+setCalendarMode(null);
+setCallStage("IDLE");
+
+// ✅ GO BACK TO DPD LIST SCREEN
+navigation.goBack();
+
       }}
     >
       <Text style={styles.updateText}>UPDATE SCHEDULE</Text>
@@ -3338,8 +3278,7 @@ onPress={() => {
         setShowThreeActionAfterCloseNo(false);
 
         resetVisitFlow();
-
-        Alert.alert("Closed", "Account marked as closed & completed");
+        await exitToDPDList();
         return;
       }
 
@@ -3360,8 +3299,6 @@ onPress={() => {
 
         // ✅ go to Back Options directly
         setNotMetStage("BACK_OPTIONS");
-
-        Alert.alert("Closed", "Account marked as closed & completed");
         return;
       }
 

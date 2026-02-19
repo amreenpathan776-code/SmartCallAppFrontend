@@ -10,6 +10,8 @@ import NPAScreen from "./NPAScreen";
 import DPDListScreen from "./DPDListScreen";
 import AccountDetailsScreen from "./AccountDetailsScreen";
 import TodayScheduleList from "./TodayScheduleList";
+import MarketingLeadsScreen from "./MarketingLeadsScreen";
+import LeadFormScreen from "./LeadFormScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -25,8 +27,11 @@ export default function App() {
         <Stack.Screen name="DPDList" component={DPDListScreen} />
         <Stack.Screen name="AccountDetails" component={AccountDetailsScreen} />
 <Stack.Screen name="TodayScheduleList" component={TodayScheduleList}/>
-
-
+<Stack.Screen 
+  name="Marketing" 
+  component={MarketingLeadsScreen}
+/>
+<Stack.Screen name="LeadForm" component={LeadFormScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

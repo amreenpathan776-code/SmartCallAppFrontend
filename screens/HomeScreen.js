@@ -11,7 +11,7 @@ import {
 import Ionicons from "react-native-vector-icons/Ionicons";
 import BASE_URL from "./config";
 import { useFocusEffect } from "@react-navigation/native";
-
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width } = Dimensions.get("window");
 
@@ -117,9 +117,21 @@ useFocusEffect(
 
         <Text style={styles.headerTitle}>DASHBOARD</Text>
 
-        <TouchableOpacity>
-          <Ionicons name="log-out-outline" size={28} color="#fff" />
-        </TouchableOpacity>
+     <TouchableOpacity
+  onPress={async () => {
+    // 🧹 clear login session
+    await AsyncStorage.removeItem("LOGGED_USER");
+
+    // 🔁 reset navigation and go to Welcome
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "Welcome" }],
+    });
+  }}
+>
+  <Ionicons name="log-out-outline" size={28} color="#fff" />
+</TouchableOpacity>
+
       </View>
 
 {/* ================= BODY ================= */}

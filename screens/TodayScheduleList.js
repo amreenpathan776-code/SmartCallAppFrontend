@@ -99,8 +99,9 @@ export default function TodayScheduleList({ route, navigation }) {
     return (
       <View style={[styles.card, isCompleted && { opacity: 0.55 }]}>
         {/* NAME + BADGE */}
-        <View style={styles.nameRow}>
-          <Text style={styles.name}>{item.firstname}</Text>
+       <View style={styles.personRow}>
+         <Ionicons name="person-circle" size={22} color="#0a3d62" />
+         <Text style={styles.name}>{item.firstname}</Text>
 
           <View
             style={[
@@ -115,8 +116,11 @@ export default function TodayScheduleList({ route, navigation }) {
         <Text style={styles.sub}>Loan A/c: {item.LoanAccountNumber}</Text>
 
         <View style={styles.row}>
-          <Text>📞 {item.mobileNumber}</Text>
-          <Text style={styles.amount}>₹{item.currentOutstandingBalance}</Text>
+            <View style={styles.phoneRow}>
+              <Ionicons name="call" size={18} color="#27ae60" />
+              <Text style={styles.phoneText}>{item.mobileNumber}</Text>
+            </View>
+          <Text style={styles.amount}>₹{item.overdueAmount}</Text>
         </View>
 
         {/* ✅ ACTION ICONS (ONLY ONE ICON BASED ON TYPE) */}
@@ -367,4 +371,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
+  personRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 6,
+},
+
+  phoneRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 6,
+},
+
+phoneText: {
+  fontSize: 13,
+  color: "#333",
+},
 });
