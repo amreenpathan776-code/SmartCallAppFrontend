@@ -16,7 +16,7 @@ Geolocation.setRNConfiguration({
 
 
 // ⭐ GOOGLE API KEY (single place only)
-const GOOGLE_API_KEY = "AIzaSyC9Km_CstWYCOPoY1fFZaKLonjsurrqWBA"
+const GOOGLE_API_KEY = "AIzaSyBU8cG2UuNw7i-6m7azb1cUIiNgX0DJ4KA"
 
 // ===============================
 // LOCATION PERMISSION
