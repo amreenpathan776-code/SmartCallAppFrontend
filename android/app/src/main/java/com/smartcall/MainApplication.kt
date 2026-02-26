@@ -1,4 +1,4 @@
-package com.smartrecoverynew
+package com.smartcall
 
 import android.app.Application
 import com.facebook.react.PackageList

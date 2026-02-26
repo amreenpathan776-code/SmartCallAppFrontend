@@ -718,7 +718,15 @@ const exitToDPDList = async () => {
 // 🚀 MASTER START VISIT (TODAY + UNSCHEDULED USE SAME)
 const startVisitFlow = async () => {
   try {
-    // 📍 Capture location
+    // ✅ 1) Immediately show STOP screen
+    setVisitStage("IDLE");
+    setShowVisitModal(true);
+
+    // ✅ 2) Start VISIT session first (fast operation)
+    const sessionId = await startVisitSession();
+    if (!sessionId) return;
+
+    // ✅ 3) Capture start location
     const coords = await handleCaptureLocation();
     if (!coords) return;
 
@@ -729,17 +737,13 @@ const startVisitFlow = async () => {
     });
     setStartAddress(coords.address);
 
-    // 💾 Save start location in DB
+    // ✅ 4) Save to DB
     const sno = await saveStartLocationToDBAndReturnSNo(coords);
     if (!sno) return;
 
     setCurrentVisitSNo(sno);
 
-    // 🔥 Start VISIT session
-    const sessionId = await startVisitSession();
-    if (!sessionId) return;
-
-    // 📝 Log VISIT_STARTED
+    // ✅ 5) Log
     await logVisitAction({
       actionCode: "VISIT_STARTED",
       actionLabel: "Visit Started",
@@ -747,12 +751,10 @@ const startVisitFlow = async () => {
         sno,
         startLat: coords.latitude,
         startLng: coords.longitude,
-        accuracy: coords.accuracy,
+        accuracy: coords.acacy,
         address: coords.address,
       },
     });
- // 🎉 Open visit modal
-    setShowVisitModal(true);
 
   } catch (e) {
     console.log("Start visit error:", e);
@@ -1144,8 +1146,6 @@ const saveStartLocationToDB = async (coords) => {
       Alert.alert("❌ Save Failed", data.message || "Unable to save location");
       return;
     }
-
-    Alert.alert("✅ Saved", "Start location stored in FieldVisitReport");
   } catch (err) {
     Alert.alert("Error", err.message);
   }
@@ -3471,8 +3471,6 @@ onPress={async () => {
 >
   <Text style={styles.stopCircleText}>STOP</Text>
 </TouchableOpacity>
-
-
   </View>
 )}
 
@@ -4561,8 +4559,6 @@ onPress={async () => {
         // ✅ 3) End visit session
         await endVisitSession();
 
-        Alert.alert("Completed", "Visit marked as completed");
-
         // ✅ 4) FIX: Clear visitExitStage so BackOptions won't show twice
         setVisitExitStage("NONE");
 
@@ -4700,9 +4696,6 @@ onPress={async () => {
 
         // ✅ end session
         await endVisitSession();
-
-        Alert.alert("Completed", "Visit marked as completed");
-
         // ✅ IMPORTANT: prevent duplicate BackOptions
         setVisitExitStage("NONE");
 
@@ -4899,8 +4892,6 @@ setShowCloseAccountModal(true);
 
         // ✅ end visit session
         await endVisitSession();
-
-        Alert.alert("Completed", "Visit marked as completed");
 
         // ✅ prevent duplicate backoptions
         setVisitExitStage("NONE");

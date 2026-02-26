@@ -117,23 +117,35 @@ useFocusEffect(
 
         <Text style={styles.headerTitle}>DASHBOARD</Text>
 
-     <TouchableOpacity
-  onPress={async () => {
-    // 🧹 clear login session
-    await AsyncStorage.removeItem("LOGGED_USER");
+ <View style={{ flexDirection: "row", alignItems: "center", gap: 15 }}>
 
-    // 🔁 reset navigation and go to Welcome
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "Welcome" }],
-    });
-  }}
->
-  <Ionicons name="log-out-outline" size={28} color="#fff" />
-</TouchableOpacity>
+  {/* 🔥 HISTORY ICON */}
+  <TouchableOpacity
+    onPress={() =>
+      navigation.navigate("ActivityHistory", {
+        userId: user?.UserId,
+      })
+    }
+  >
+    <Ionicons name="time-outline" size={26} color="#fff" />
+  </TouchableOpacity>
 
-      </View>
+  {/* 🚪 LOGOUT ICON */}
+  <TouchableOpacity
+    onPress={async () => {
+      await AsyncStorage.removeItem("LOGGED_USER");
 
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Welcome" }],
+      });
+    }}
+  >
+    <Ionicons name="log-out-outline" size={28} color="#fff" />
+  </TouchableOpacity>
+
+</View>
+</View>
 {/* ================= BODY ================= */}
 <FlatList
   data={[1]} // dummy

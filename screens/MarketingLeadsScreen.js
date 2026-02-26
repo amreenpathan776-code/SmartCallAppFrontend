@@ -36,8 +36,12 @@ export default function MarketingLeadsScreen({ navigation }) {
   };
 
   // ⭐ CARD UI
-  const renderLead = ({ item }) => (
-    <View style={styles.card}>
+const renderLead = ({ item }) => (
+  <TouchableOpacity
+    style={styles.card}
+    activeOpacity={0.9}
+    onPress={() => navigation.navigate("LeadDetails", { lead: item })}
+  >
 
       <View style={styles.topRow}>
         <Text style={styles.name}>{item.FullName}</Text>
@@ -71,7 +75,7 @@ export default function MarketingLeadsScreen({ navigation }) {
           <Text style={styles.iconText}>Visit</Text>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   return (

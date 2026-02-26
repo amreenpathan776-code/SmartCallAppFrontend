@@ -9,6 +9,7 @@ import {
   TextInput,
   RefreshControl,
   Alert,
+  SectionList,
 } from "react-native";
 
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -99,19 +100,23 @@ export default function TodayScheduleList({ route, navigation }) {
     return (
       <View style={[styles.card, isCompleted && { opacity: 0.55 }]}>
         {/* NAME + BADGE */}
-       <View style={styles.personRow}>
-         <Ionicons name="person-circle" size={22} color="#0a3d62" />
-         <Text style={styles.name}>{item.firstname}</Text>
+<View style={styles.personRow}>
+  <View style={{ flexDirection: "row", alignItems: "center" }}>
+    <Ionicons name="person-circle" size={22} color="#0a3d62" />
+    <Text style={[styles.name, { marginLeft: 6 }]}>
+      {item.firstname}
+    </Text>
+  </View>
 
-          <View
-            style={[
-              styles.statusBadge,
-              isCompleted ? styles.statusCompleted : styles.statusPending,
-            ]}
-          >
-            <Text style={styles.statusText}>{badgeText}</Text>
-          </View>
-        </View>
+  <View
+    style={[
+      styles.statusBadge,
+      isCompleted ? styles.statusCompleted : styles.statusPending,
+    ]}
+  >
+    <Text style={styles.statusText}>{badgeText}</Text>
+  </View>
+</View>
 
         <Text style={styles.sub}>Loan A/c: {item.LoanAccountNumber}</Text>
 
@@ -210,7 +215,37 @@ export default function TodayScheduleList({ route, navigation }) {
       </View>
     );
   }
+const groupByDate = (data) => {
+  const grouped = {};
 
+  data.forEach((item) => {
+    const rawDate =
+      type === "CALL"
+        ? item.ScheduleCallTimestamp
+        : item.ScheduleVisitTimestamp;
+
+    if (!rawDate) return;
+
+    const dateObj = new Date(rawDate);
+    const today = new Date();
+
+    const formatted =
+      dateObj.toDateString() === today.toDateString()
+        ? "TODAY"
+        : dateObj.toLocaleDateString("en-GB");
+
+    if (!grouped[formatted]) {
+      grouped[formatted] = [];
+    }
+
+    grouped[formatted].push(item);
+  });
+
+  return Object.keys(grouped).map((date) => ({
+    title: date,
+    data: grouped[date],
+  }));
+};
   return (
     <View style={styles.container}>
       {/* HEADER */}
@@ -238,20 +273,36 @@ export default function TodayScheduleList({ route, navigation }) {
       </View>
 
       {/* LIST */}
-      <FlatList
-        data={filteredData}
-        keyExtractor={(item, index) => String(item.LoanAccountNumber || index)}
-        renderItem={renderItem}
-        contentContainerStyle={{ padding: 10 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        ListEmptyComponent={
-          <Text style={{ textAlign: "center", marginTop: 20 }}>
-            No schedules for today ✅
-          </Text>
-        }
-      />
+      <SectionList
+  sections={groupByDate(filteredData)}
+  keyExtractor={(item, index) => item.LoanAccountNumber + index}
+  renderItem={renderItem}
+  renderSectionHeader={({ section }) => (
+  <View style={{
+    backgroundColor: section.title === "TODAY" ? "#0a3d62" : "#0a3d62",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 15,
+    borderRadius: 8,
+    elevation: 2,
+    alignItems: "center",
+
+  }}>
+    <Text style={{
+      fontWeight: "900",
+      fontSize: 15,
+      color: section.title === "TODAY" ? "#fff" : "#fff"
+    }}>
+      {section.title}
+    </Text>
+  </View>
+)}
+
+  contentContainerStyle={{ padding: 10 }}
+  refreshControl={
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+  }
+/>
     </View>
   );
 }
@@ -371,10 +422,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
-  personRow: {
+personRow: {
   flexDirection: "row",
+  justifyContent: "space-between",
   alignItems: "center",
-  gap: 6,
 },
 
   phoneRow: {
