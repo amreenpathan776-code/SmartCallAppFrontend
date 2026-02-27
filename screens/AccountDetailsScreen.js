@@ -762,7 +762,7 @@ setIsVisitFullScreen(true);
     Alert.alert("Error", "Unable to start visit");
   }
 };
-const calculateDistanceKm = (lat1, lon1, lat2, lon2) => {
+{/*const calculateDistanceKm = (lat1, lon1, lat2, lon2) => {
   const R = 6371; // Earth radius in KM
 
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -778,7 +778,8 @@ const calculateDistanceKm = (lat1, lon1, lat2, lon2) => {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c; // distance in KM
-};
+}; 
+*/}
 const saveStartLocationToDBAndReturnSNo = async (coords) => {
   try {
     const userStr = await AsyncStorage.getItem("LOGGED_USER");
@@ -1000,7 +1001,36 @@ onPress={async () => {
 
   </View>
 );
+const saveAlternateNumber = async () => {
+  if (!altNumber || altNumber.length !== 10) {
+    Alert.alert("Invalid", "Alternate number must be 10 digits");
+    return false;
+  }
+  try {
+    const res = await fetch(`${BASE_URL}/api/account/save-alternate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        loanAccountNumber: account.loanAccountNumber,
+        alternateNumber: altNumber,
+      }),
+    });
 
+    const data = await res.json();
+
+    if (!res.ok) {
+      Alert.alert("Error", data.message || "Unable to save");
+      return false;
+    }
+// ✅ lock after save
+setAltEditable(false);
+setAltUnlocked(true);   // 👈 ADD THIS LINE
+    return true;
+  } catch (e) {
+    Alert.alert("Error", "Server error");
+    return false;
+  }
+};
 useEffect(() => {
   if (
     visitStage === "OUTCOME" &&
@@ -1046,6 +1076,16 @@ if (openFlow === "VISIT_START") {
 
       const data = await res.json();
       setAccount(data.account);
+      // ✅ PREFILL ALTERNATE NUMBER IF EXISTS
+if (data.account?.AlternateNumber) {
+  setAltNumber(data.account.AlternateNumber);
+  setAltUnlocked(true);
+  setAltEditable(false); // lock if already saved
+} else {
+  setAltNumber("");
+  setAltUnlocked(true);   // allow entry
+  setAltEditable(true);
+}
       setLoading(false);
     } catch (err) {
       console.error(err);
@@ -1183,36 +1223,39 @@ const address = await getAddressFromCoordsGoogle(
   }
 };
 
-
-
-
 const handleCallNow = async () => {
   try {
     if (!account) return;
 
-    // ✅ collect both numbers
+    // ✅ If alternate is editable and filled → save first
+if (altNumber && altNumber.length === 10) {
+  const saved = await saveAlternateNumber();
+  if (!saved) return;
+}
+
+    // ✅ collect numbers AFTER save
     const primary = String(account.mobileNumber || "").trim();
     const alt = String(altNumber || "").trim();
 
-    const numbers = [primary, alt].filter((n) => n && n.length >= 10);
+    const numbers = [primary, alt].filter(
+      (n) => n && n.length === 10
+    );
 
     if (numbers.length === 0) {
       Alert.alert("No Number", "No valid phone number available");
       return;
     }
 
-    // ✅ Start CALL session first (mandatory)
+    // ✅ Start CALL session
     const sessionId = await startCallSession();
     if (!sessionId) {
       Alert.alert("Error", "Unable to start call session");
       return;
     }
 
-    // ✅ ALWAYS open dial pad first
-    // ✅ and open call modal AFTER coming back
     setOpenCallModalAfterDial(true);
 
-    // ✅ SINGLE NUMBER → directly open dialpad
+    // ✅ Single number
     if (numbers.length === 1) {
       await logCallAction({
         actionCode: "CALL_DIALED",
@@ -1224,16 +1267,14 @@ const handleCallNow = async () => {
       return;
     }
 
-    // ✅ MULTIPLE NUMBERS → show selection modal
-    // user will click one number, then dialpad will open
+    // ✅ Multiple numbers
     setShowCallModal(true);
+
   } catch (e) {
     console.log("handleCallNow error:", e);
     Alert.alert("Error", "Unable to start call");
   }
 };
-
-
 
   if (loading) {
     return (
@@ -1305,8 +1346,10 @@ const handleCallNow = async () => {
                   maxLength={10}
                   editable={altEditable}
                   value={altNumber}
-                  onChangeText={setAltNumber}
-                />
+onChangeText={(text) => {
+  const cleaned = text.replace(/[^0-9]/g, "");
+  setAltNumber(cleaned);
+}}                />
 
                 <TouchableOpacity
                   onPress={() => setAltEditable(!altEditable)}
@@ -3490,101 +3533,94 @@ onPress={async () => {
       Are you at the customer’s location and want to stop this visit?
     </Text>
 
-<TouchableOpacity
-  style={styles.primaryBtnFull}
-  onPress={async () => {
-    // ✅ 1) Capture stop location NOW
-    const stop = await captureStopLocation();
-    if (!stop) return;
+    <TouchableOpacity
+      style={styles.primaryBtnFull}
+      onPress={async () => {
+        try {
+          // 1️⃣ Capture stop location
+          const stop = await captureStopLocation();
+          if (!stop) return;
 
-    // ✅ 2) Validate visit start saved or not
-    if (!currentVisitSNo || !startLocation) {
-      Alert.alert("Error", "Start visit missing. Please start again.");
-      return;
-    }
+          // 2️⃣ Validate visit session
+          if (!currentVisitSNo) {
+            Alert.alert("Error", "Visit session missing.");
+            return;
+          }
 
-    // ✅ 3) Calculate distance
-    const distanceKm = calculateDistanceKm(
-      startLocation.latitude,
-      startLocation.longitude,
-      stop.latitude,
-      stop.longitude
-    );
+          // 3️⃣ Send stop details to backend (NO distance calculation here)
+          const res = await fetch(`${BASE_URL}/api/field-visit/stop`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sno: currentVisitSNo,
+              stopLat: stop.latitude,
+              stopLng: stop.longitude,
+              stopAddress: stop.address,
+            }),
+          });
 
-    // ✅ 4) Update STOP details into same row in DB
-    try {
-      const res = await fetch(`${BASE_URL}/api/field-visit/stop`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sno: currentVisitSNo,
-          meetLat: stop.latitude,
-          meetLng: stop.longitude,
-          meetAddress: stop.address,
-          distanceTravelled: Number(distanceKm.toFixed(3)),
-        }),
-      });
+          const data = await res.json();
 
-      const data = await res.json();
+          if (!res.ok) {
+            Alert.alert("❌ Stop Save Failed", data.message || "Unable to stop visit");
+            return;
+          }
 
-      if (!res.ok) {
-        Alert.alert("❌ Stop Save Failed", data.message || "Unable to stop visit");
-        return;
-      }
-    } catch (e) {
-      Alert.alert("❌ Error", "Failed to save stop details");
-      return;
-    }
-// ✅ 5) Log activity
-await logVisitAction({
-  actionCode: "VISIT_STOP_CONFIRMED",
-  actionLabel: "Visit Stop Confirmed",
-  metadata: {
-    sno: currentVisitSNo,
-    stopLat: stop.latitude,
-    stopLng: stop.longitude,
-    stopAccuracy: stop.accuracy,
-    stopAddress: stop.address,
-    distanceKm: Number(distanceKm.toFixed(3)),
-  },
-});
-// ✅ 6) Acknowledgement
-Alert.alert(
-  "✅ Visit Stopped",
-  `Stop Lat: ${stop.latitude}\nStop Lng: ${stop.longitude}\nDistance: ${distanceKm.toFixed(3)} km\n\n📍 ${stop.address}`
-);
-// 🔥 VERY IMPORTANT — clear old visit screens
-setFlowStack([]);       // clears back stack
-resetVisitFlow();       // resets previous visit states
+          const distanceKm = data.distanceKm; // 👈 comes from backend Google API
 
-// ⭐ now open OUTCOME screen fresh
-setShowVisitModal(true);
-setVisitStage("OUTCOME");
-  }}
->
-  <Text style={styles.primaryBtnText}>Yes, Stop</Text>
-</TouchableOpacity>
+          // 4️⃣ Log activity
+          await logVisitAction({
+            actionCode: "VISIT_STOP_CONFIRMED",
+            actionLabel: "Visit Stop Confirmed",
+            metadata: {
+              sno: currentVisitSNo,
+              stopLat: stop.latitude,
+              stopLng: stop.longitude,
+              stopAccuracy: stop.accuracy,
+              stopAddress: stop.address,
+              distanceKm: distanceKm,
+            },
+          });
 
+          // 5️⃣ Success alert
+          Alert.alert(
+            "✅ Visit Stopped",
+            `Distance Travelled: ${distanceKm} km\n\n📍 ${stop.address}`
+          );
+
+          // 6️⃣ Reset flow
+          setFlowStack([]);
+          resetVisitFlow();
+          setShowVisitModal(true);
+          setVisitStage("OUTCOME");
+
+        } catch (error) {
+          Alert.alert("❌ Error", "Failed to stop visit");
+        }
+      }}
+    >
+      <Text style={styles.primaryBtnText}>Yes, Stop</Text>
+    </TouchableOpacity>
 
     <TouchableOpacity
       style={styles.secondaryBtnFull}
-onPress={() => {
-  setStopLocation(null);
-  setStopAddress("");
-  setVisitStage("IDLE");
-}}
+      onPress={() => {
+        setStopLocation(null);
+        setStopAddress("");
+        setVisitStage("IDLE");
+      }}
     >
       <Text style={styles.secondaryBtnText}>Cancel</Text>
     </TouchableOpacity>
-{stopLocation && (
-  <Text style={{ marginTop: 8, color: "#334155", fontSize: 13 }}>
-    ✅ Stop Lat: {stopLocation.latitude}, Stop Lng: {stopLocation.longitude}
-  </Text>
-)}
+
+    {stopLocation && (
+      <Text style={{ marginTop: 8, color: "#334155", fontSize: 13 }}>
+        ✅ Stop Lat: {stopLocation.latitude}, Stop Lng: {stopLocation.longitude}
+      </Text>
+    )}
 
   </View>
 )}
-
 
 {/* 🧭 VISIT OUTCOME – ENHANCED */}
 {visitStage === "OUTCOME" && visitMeetStatus === null && (
