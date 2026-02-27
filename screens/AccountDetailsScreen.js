@@ -648,6 +648,7 @@ const [calendarMode, setCalendarMode] = useState(null);
 // =====================
 // UNSCHEDULED VISIT
 // =====================
+const [isVisitFullScreen, setIsVisitFullScreen] = useState(false);
 const [showVisitModal, setShowVisitModal] = useState(false);
 const [visitStage, setVisitStage] = useState("IDLE");
 const [visitMeetStatus, setVisitMeetStatus] = useState(null);
@@ -718,7 +719,7 @@ const exitToDPDList = async () => {
 // 🚀 MASTER START VISIT (TODAY + UNSCHEDULED USE SAME)
 const startVisitFlow = async () => {
   try {
-    // ✅ 1) Immediately show STOP screen
+setIsVisitFullScreen(true); 
     setVisitStage("IDLE");
     setShowVisitModal(true);
 
@@ -849,8 +850,8 @@ const resetNotReadyFlow = () => {
   setVisitExitStage("NONE");
 };
 const resetVisitFlow = () => {
-  // modal
-  setShowVisitModal(false);
+setIsVisitFullScreen(false); 
+ setShowVisitModal(false);
 
   // visit flow
   setVisitStage("IDLE");
@@ -3379,11 +3380,14 @@ navigation.goBack();
     onPress={resetVisitFlow}
   >
     {/* Dialog Card */}
-    <TouchableOpacity
-      activeOpacity={1}
-      style={styles.visitDialog}
-      onPress={() => {}}
-    >
+ <TouchableOpacity
+  activeOpacity={1}
+  style={[
+    styles.visitDialog,
+    isVisitFullScreen && styles.fullScreenVisitDialog
+  ]}
+  onPress={() => {}}
+>
       {/* Header */}
 {/* ===== VISIT MODAL HEADER ===== */}
 <View style={styles.modalHeaderRow}>
@@ -6182,6 +6186,10 @@ activeVisitSub: {
   marginTop: 2,
   opacity: 0.9,
 },
-
+fullScreenVisitDialog: {
+  width: "100%",
+  height: "100%",
+  borderRadius: 0,
+},
 
 });
