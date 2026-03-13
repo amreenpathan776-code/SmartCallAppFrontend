@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState , useCallback} from "react";
 import {
   View,
   Text,
@@ -7,18 +7,34 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import BASE_URL from "./config";
 import { getPersistentDeviceId } from "./deviceIdHelper";
+import Ionicons from "react-native-vector-icons/Ionicons";
+import { useFocusEffect } from "@react-navigation/native";
 
-export default function RegisterScreen() {
-  const [userId, setUserId] = useState("");
+export default function RegisterScreen({ navigation }) {
+    const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
   const [mpin, setMpin] = useState("");
   const [securityQ, setSecurityQ] = useState("");
   const [securityA, setSecurityA] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showMpin, setShowMpin] = useState(false);
+
+  useFocusEffect(
+  useCallback(() => {
+    setUserId("");
+    setPassword("");
+    setMpin("");
+    setSecurityQ("");
+    setSecurityA("");
+  }, [])
+);
 
   const securityQuestions = [
     { label: "Select a security question", value: "" },
@@ -71,8 +87,12 @@ export default function RegisterScreen() {
         return;
       }
 
-      Alert.alert("Success", "Registration completed successfully");
-
+Alert.alert("Success", "Registration completed successfully", [
+  {
+    text: "OK",
+    onPress: () => navigation.navigate("Login"),
+  },
+]);
       setUserId("");
       setPassword("");
       setMpin("");
@@ -86,7 +106,14 @@ export default function RegisterScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+  <KeyboardAvoidingView
+    style={{ flex: 1 }}
+    behavior={Platform.OS === "ios" ? "padding" : "height"}
+  >
+  <ScrollView
+    contentContainerStyle={styles.container}
+    keyboardShouldPersistTaps="handled"
+  >
       <Text style={styles.title}>User Registration</Text>
 
       <TextInput
@@ -96,25 +123,45 @@ export default function RegisterScreen() {
         onChangeText={setUserId}
       />
 
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
+<View style={styles.passwordContainer}>
+  <TextInput
+    style={styles.passwordInput}
+    placeholder="Password"
+    secureTextEntry={!showPassword}
+    value={password}
+    onChangeText={setPassword}
+  />
 
-      <TextInput
-        style={styles.input}
-        placeholder="MPIN (4 digits)"
-        secureTextEntry
-        keyboardType="numeric"
-        maxLength={4}
-        value={mpin}
-        onChangeText={(text) => {
-          if (/^\d*$/.test(text) && text.length <= 4) setMpin(text);
-        }}
-      />
+  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+    <Ionicons
+      name={showPassword ? "eye-off" : "eye"}
+      size={22}
+      color="#555"
+    />
+  </TouchableOpacity>
+</View>
+
+    <View style={styles.passwordContainer}>
+  <TextInput
+    style={styles.passwordInput}
+    placeholder="MPIN (4 digits)"
+    secureTextEntry={!showMpin}
+    keyboardType="numeric"
+    maxLength={4}
+    value={mpin}
+    onChangeText={(text) => {
+      if (/^\d*$/.test(text) && text.length <= 4) setMpin(text);
+    }}
+  />
+
+  <TouchableOpacity onPress={() => setShowMpin(!showMpin)}>
+    <Ionicons
+      name={showMpin ? "eye-off" : "eye"}
+      size={22}
+      color="#555"
+    />
+  </TouchableOpacity>
+</View>
 
       <View style={styles.pickerContainer}>
         <Picker selectedValue={securityQ} onValueChange={(v) => setSecurityQ(v)}>
@@ -140,7 +187,13 @@ export default function RegisterScreen() {
           {loading ? "Registering..." : "Register"}
         </Text>
       </TouchableOpacity>
+      <TouchableOpacity onPress={() => navigation.navigate("Login")}>
+  <Text style={styles.loginText}>
+    Already Registered? then Please Login here
+  </Text>
+</TouchableOpacity>
     </ScrollView>
+</KeyboardAvoidingView>
   );
 }
 
@@ -182,4 +235,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  passwordContainer: {
+  flexDirection: "row",
+  alignItems: "center",
+  borderWidth: 1,
+  borderColor: "#ccc",
+  borderRadius: 8,
+  paddingHorizontal: 10,
+  marginBottom: 12,
+},
+
+passwordInput: {
+  flex: 1,
+  paddingVertical: 12,
+},
+loginText: {
+  marginTop: 15,
+  textAlign: "center",
+  color: "#0a3d62",
+  fontWeight: "600",
+},
 });

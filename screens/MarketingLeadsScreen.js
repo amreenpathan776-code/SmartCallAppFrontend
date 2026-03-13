@@ -12,6 +12,7 @@ export default function MarketingLeadsScreen({ navigation }) {
 
   const [leads, setLeads] = useState([]);
   const [leadTypeModal, setLeadTypeModal] = useState(false);
+  const [leadStatus,setLeadStatus] = useState({});
 
   // ⭐ FETCH LEADS WHEN SCREEN OPENS
   useFocusEffect(
@@ -28,27 +29,108 @@ export default function MarketingLeadsScreen({ navigation }) {
       const res = await fetch(`${BASE_URL}/api/getMyLeads/${user.UserId}`);
       const data = await res.json();
 
-      if (data.success) setLeads(data.leads);
+      if (data.success){
+
+setLeads(data.leads);
+
+fetchLeadStatus(user.UserId);
+
+}
     } catch (err) {
       console.log(err);
       alert("Failed to load leads");
     }
   };
+const fetchLeadStatus = async(userId)=>{
 
+try{
+
+const res = await fetch(`${BASE_URL}/api/leads/status/${userId}`);
+const data = await res.json();
+
+const map = {};
+
+data.forEach(row=>{
+
+let status = "PENDING";
+
+if(
+row.ActionCode === "LEAD_LOS_CAPTURED" ||
+row.ActionCode === "LEAD_NO_REQUIREMENT"
+){
+status="COMPLETED";
+}
+else if(
+row.ActionCode==="LEAD_SCHEDULED" ||
+row.ActionCode==="LEAD_CALLBACK" ||
+row.ActionCode==="LEAD_VISIT" ||
+row.ActionCode==="LEAD_FLOW_SUBMITTED" ||
+row.ActionCode==="LEAD_INTEREST_OTHER_PRODUCT" ||
+row.ActionCode==="LEAD_PRODUCT_DEPOSIT" ||
+row.ActionCode==="LEAD_PRODUCT_LOAN" ||
+row.ActionCode==="LEAD_PRODUCT_OTHER" ||
+row.ActionCode==="LEAD_OTHER_PRODUCT_TYPED"
+){
+status="INPROCESS";
+}
+
+map[row.SNo]=status;
+
+});
+
+setLeadStatus(map);
+
+}catch(err){
+
+console.log("status fetch error",err);
+
+}
+
+};
   // ⭐ CARD UI
 const renderLead = ({ item }) => (
-  <TouchableOpacity
-    style={styles.card}
-    activeOpacity={0.9}
-    onPress={() => navigation.navigate("LeadDetails", { lead: item })}
-  >
+ <TouchableOpacity
+  style={styles.card}
+  activeOpacity={0.9}
+  onPress={() => {
+
+    if(leadStatus[item.SNo] === "COMPLETED"){
+      alert("This lead is already completed");
+      return;
+    }
+
+    navigation.navigate("LeadDetails", { lead: item });
+
+  }}
+>
 
       <View style={styles.topRow}>
         <Text style={styles.name}>{item.FullName}</Text>
         <Text style={styles.distance}>0.0 km 📍</Text>
       </View>
 
-      <Text style={styles.status}>Status : {item.SelectLeadType}</Text>
+     <View style={styles.statusRow}>
+
+<Text style={styles.statusLabel}>Status</Text>
+
+<View
+style={[
+styles.badge,
+leadStatus[item.SNo]==="COMPLETED" && styles.badgeCompleted,
+leadStatus[item.SNo]==="INPROCESS" && styles.badgeInProcess,
+leadStatus[item.SNo]!=="COMPLETED" &&
+leadStatus[item.SNo]!=="INPROCESS" &&
+styles.badgePending
+]}
+>
+
+<Text style={styles.badgeText}>
+{leadStatus[item.SNo] || "PENDING"}
+</Text>
+
+</View>
+
+</View>
 
       <View style={styles.middleRow}>
         <View>
@@ -57,7 +139,9 @@ const renderLead = ({ item }) => (
         </View>
 
         <View style={{alignItems:"flex-end"}}>
-          <Text style={styles.info}>Attempt No : --</Text>
+         <Text style={styles.info}>
+Attempt No : {item.AttemptCount || 0}
+</Text>
           <Text style={styles.info}>Pincode {item.PinCode}</Text>
         </View>
       </View>
@@ -170,4 +254,38 @@ modalCard:{backgroundColor:"#fff",width:"80%",padding:20,borderRadius:12,alignIt
 modalTitle:{fontSize:18,fontWeight:"700",marginBottom:15},
 modalBtn:{backgroundColor:"#2f54eb",padding:12,width:"100%",borderRadius:8,marginVertical:6,alignItems:"center"},
 modalText:{color:"#fff",fontWeight:"700"},
+statusRow:{
+flexDirection:"row",
+alignItems:"center",
+marginVertical:6
+},
+
+statusLabel:{
+fontSize:13,
+color:"#444",
+marginRight:8
+},
+
+badge:{
+paddingHorizontal:10,
+paddingVertical:3,
+borderRadius:12
+},
+
+badgePending:{
+backgroundColor:"#ffeaa7"
+},
+
+badgeInProcess:{
+backgroundColor:"#74b9ff"
+},
+
+badgeCompleted:{
+backgroundColor:"#55efc4"
+},
+
+badgeText:{
+fontSize:11,
+fontWeight:"700"
+}
 });

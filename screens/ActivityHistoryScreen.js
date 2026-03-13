@@ -12,12 +12,14 @@ import {
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { Calendar } from "react-native-calendars";
 import BASE_URL from "./config";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function ActivityHistoryScreen({ route, navigation }) {
   const { userId } = route.params;
 
   const today = new Date().toISOString().split("T")[0];
-
+const [historyType, setHistoryType] = useState("BOTH"); 
+// BOTH | NPA | LEAD
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -42,19 +44,20 @@ const formatDisplayDate = (dateStr) => {
     fetchHistory(today, today, "");
   }, []);
 
-  const fetchHistory = async (fDate, tDate, search) => {
-    setLoading(true);
+const fetchHistory = async (fDate, tDate, search, typeValue = historyType) => {
+      setLoading(true);
 
     try {
       const res = await fetch(`${BASE_URL}/api/activity/history`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          fromDate: fDate,
-          toDate: tDate,
-          searchText: search,
-        }),
+body: JSON.stringify({
+  userId,
+  fromDate: fDate,
+  toDate: tDate,
+  searchText: search,
+  type: typeValue,  // 👈 use passed value
+}),
       });
 
       const result = await res.json();
@@ -141,8 +144,12 @@ const applyFilters = () => {
           </View>
         </View>
 
-        <Text style={styles.sub}>Loan: {item.LoanAccountNumber}</Text>
-        <Text style={styles.sub}>DPD: {item.dpdQueue}</Text>
+    {item.SourceType !== "LEAD" && (
+  <>
+    <Text style={styles.sub}>Loan: {item.LoanAccountNumber}</Text>
+    <Text style={styles.sub}>DPD: {item.dpdQueue}</Text>
+  </>
+)}
         <Text style={styles.action}>
           {item.SessionType} → {item.ActionLabel}
         </Text>
@@ -175,7 +182,9 @@ const applyFilters = () => {
         : `${formatDisplayDate(fromDate)} → ${formatDisplayDate(toDate)}`}
     </Text>
   </View>
+<View style={styles.rightIcons}>
 
+  {/* CALENDAR */}
   <TouchableOpacity
     onPress={() => {
       Keyboard.dismiss();
@@ -185,6 +194,29 @@ const applyFilters = () => {
   >
     <Ionicons name="calendar-outline" size={22} color="#fff" />
   </TouchableOpacity>
+
+  {/* HOME */}
+  <TouchableOpacity
+    onPress={async () => {
+      const saved = await AsyncStorage.getItem("LOGGED_USER");
+      const user = saved ? JSON.parse(saved) : null;
+
+      if (!user) {
+        alert("Session expired. Please login again.");
+        return;
+      }
+
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Home", params: { user } }],
+      });
+    }}
+  >
+    <Ionicons name="home" size={22} color="#fff" />
+  </TouchableOpacity>
+
+</View>
+
 </View>
 
       {/* SEARCH BAR */}
@@ -210,6 +242,31 @@ const applyFilters = () => {
           <Ionicons name="search" size={22} color="#0a3d62" />
         </TouchableOpacity>
       </View>
+      {/* TYPE TABS */}
+<View style={styles.tabContainer}>
+  {["BOTH", "NPA", "LEAD"].map((item) => (
+    <TouchableOpacity
+      key={item}
+      style={[
+        styles.tabButton,
+        historyType === item && styles.tabActive,
+      ]}
+      onPress={() => {
+  setHistoryType(item);
+  fetchHistory(fromDate, toDate, searchText, item);
+}}
+    >
+      <Text
+        style={[
+          styles.tabText,
+          historyType === item && styles.tabTextActive,
+        ]}
+      >
+        {item}
+      </Text>
+    </TouchableOpacity>
+  ))}
+</View>
 
       {/* COUNT + BUTTONS */}
       <View style={styles.countBar}>
@@ -597,5 +654,41 @@ notFoundText: {
   fontSize: 16,
   fontWeight: "600",
   color: "#64748b",
+},
+rightIcons: {
+  flexDirection: "row",
+  alignItems: "center",
+  width: 70,
+  justifyContent: "space-between",
+},
+tabContainer: {
+  flexDirection: "row",
+  justifyContent: "space-around",
+  marginHorizontal: 12,
+  marginTop: 12,
+  backgroundColor: "#fff",
+  borderRadius: 12,
+  padding: 6,
+  elevation: 2,
+},
+
+tabButton: {
+  flex: 1,
+  paddingVertical: 8,
+  borderRadius: 8,
+  alignItems: "center",
+},
+
+tabActive: {
+  backgroundColor: "#0a3d62",
+},
+
+tabText: {
+  fontWeight: "600",
+  color: "#0a3d62",
+},
+
+tabTextActive: {
+  color: "#fff",
 },
 });

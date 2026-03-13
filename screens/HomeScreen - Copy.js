@@ -7,6 +7,7 @@ import {
   Dimensions,
   Pressable,
   FlatList,
+  Alert,
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import BASE_URL from "./config";
@@ -18,30 +19,81 @@ const { width } = Dimensions.get("window");
 export default function HomeScreen({ navigation, route }) {
   const [showProfile, setShowProfile] = useState(false);
 
-const user = route?.params?.user;
+const routeUser = route?.params?.user;
+const [user, setUser] = useState(routeUser || null);
 const [showAssigned, setShowAssigned] = useState(false);
-const [homeSummary, setHomeSummary] = useState(null);
+const [homeSummary, setHomeSummary] = useState({});
 const [loadingSummary, setLoadingSummary] = useState(false);
 const [refreshing, setRefreshing] = useState(false);
 const [scheduleCounts, setScheduleCounts] = useState({
   call: { pending: 0, completed: 0 },
   visit: { pending: 0, completed: 0 },
 });
+
+const [restoringUser, setRestoringUser] = useState(true);
+
 const loadHomeData = async () => {
   try {
-    await fetchHomeSummary();
-    await fetchScheduleSummary();
+    if (!user?.UserId) return;
+
+    await Promise.all([
+  fetchHomeSummary(),
+  fetchScheduleSummary()
+]);
   } catch (err) {
     console.log("Home refresh error:", err);
   }
 };
 const onRefresh = async () => {
-  setRefreshing(true);
-  await loadHomeData();
-  setRefreshing(false);
+  if (refreshing) return;
+
+  try {
+    setRefreshing(true);
+    await loadHomeData();
+  } catch (e) {
+    console.log("Refresh error:", e);
+  } finally {
+    setRefreshing(false);
+  }
 };
 
+useEffect(() => {
+  const restoreUser = async () => {
+    try {
+      if (!routeUser) {
+        const savedUser = await AsyncStorage.getItem("LOGGED_USER");
+        if (savedUser) {
+          setUser(JSON.parse(savedUser));
+        }
+      }
+    } catch (error) {
+      console.log("Restore user error:", error);
+    } finally {
+      setRestoringUser(false);
+    }
+  };
 
+  restoreUser();
+}, [routeUser]);
+
+useEffect(() => {
+  if (user === null) return;
+
+  if (!user?.UserId) {
+    Alert.alert("Session Expired", "Please login again", [
+      {
+        text: "OK",
+        onPress: async () => {
+          await AsyncStorage.multiRemove(["LOGGED_USER"]);
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "Login" }],
+          });
+        },
+      },
+    ]);
+  }
+}, [user, navigation]);
 
 const employee = {
   name: user?.UserName || "",
@@ -53,24 +105,37 @@ const employee = {
 console.log("LOGGED IN USER:", user);
 const fetchHomeSummary = async () => {
   try {
+    if (!user?.UserId) return;
+
     setLoadingSummary(true);
 
-    const res = await fetch(
-      `${BASE_URL}/api/home/members-summary-v3`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user?.UserId,
-        }),
-      }
-    );
+    const res = await fetch(`${BASE_URL}/api/home/members-summary-v3`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: user.UserId,
+      }),
+    });
 
-    const data = await res.json();
-    setHomeSummary(data);
+    if (!res.ok) {
+      console.log("Home summary API failed:", res.status);
+      setHomeSummary({});
+      return;
+    }
+
+    let data = {};
+
+try {
+  data = await res.json();
+} catch (e) {
+  console.log("Invalid JSON response from members-summary API");
+}
+
+setHomeSummary(data || {});
 
   } catch (err) {
-    console.error("❌ Home summary fetch failed", err);
+    console.log("Home summary fetch failed:", err);
+    setHomeSummary({});
   } finally {
     setLoadingSummary(false);
   }
@@ -78,34 +143,80 @@ const fetchHomeSummary = async () => {
 
 const fetchScheduleSummary = async () => {
   try {
+    if (!user?.UserId) return;
+
     const res = await fetch(`${BASE_URL}/api/home/schedule-summary`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        userId: user?.UserId,
+        userId: user.UserId,
       }),
     });
 
-    const data = await res.json();
-    setScheduleCounts(data);
+    if (!res.ok) {
+      console.log("Schedule summary API failed:", res.status);
+      setScheduleCounts({
+        call: { pending: 0, completed: 0 },
+        visit: { pending: 0, completed: 0 },
+      });
+      return;
+    }
 
+   let data = {};
+
+try {
+  data = await res.json();
+} catch (e) {
+  console.log("Invalid JSON response from schedule-summary API");
+}
+
+    setScheduleCounts({
+      call: {
+        pending: data?.call?.pending ?? 0,
+        completed: data?.call?.completed ?? 0,
+      },
+      visit: {
+        pending: data?.visit?.pending ?? 0,
+        completed: data?.visit?.completed ?? 0,
+      },
+    });
   } catch (err) {
-    console.error("❌ Schedule summary fetch failed:", err);
+    console.log("Schedule summary fetch failed:", err);
+    setScheduleCounts({
+      call: { pending: 0, completed: 0 },
+      visit: { pending: 0, completed: 0 },
+    });
   }
 };
-useEffect(() => {
-  if (user?.UserId) {
-    fetchHomeSummary();
-    fetchScheduleSummary();
-  }
-}, [user?.UserId]);
+
 useFocusEffect(
   useCallback(() => {
-    if (user?.UserId) {
-      loadHomeData(); // ✅ Auto refresh when screen comes back
-    }
-  }, [user?.UserId])
+    let isActive = true;
+
+    const run = async () => {
+      try {
+       if (!user?.UserId || !isActive || restoringUser) return;
+        await loadHomeData();
+      } catch (error) {
+        console.log("Home focus load error:", error);
+      }
+    };
+
+    run();
+
+    return () => {
+      isActive = false;
+    };
+  }, [user?.UserId, restoringUser])
 );
+
+if (restoringUser) {
+  return (
+    <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+      <Text>Loading...</Text>
+    </View>
+  );
+}
 
   return (
     <View style={styles.container}>
@@ -133,7 +244,7 @@ useFocusEffect(
   {/* 🚪 LOGOUT ICON */}
   <TouchableOpacity
     onPress={async () => {
-      await AsyncStorage.removeItem("LOGGED_USER");
+      await AsyncStorage.multiRemove(["LOGGED_USER"]);
 
       navigation.reset({
         index: 0,

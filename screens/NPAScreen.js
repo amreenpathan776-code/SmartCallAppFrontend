@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function NPAScreen({ navigation , route }) {
   const userId = route?.params?.userId;
@@ -61,14 +62,34 @@ const onRefresh = async () => {
     <View style={styles.container}>
       {/* ===== HEADER ===== */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={22} color="#fff" />
-        </TouchableOpacity>
+  {/* BACK BUTTON */}
+  <TouchableOpacity onPress={() => navigation.goBack()}>
+    <Ionicons name="arrow-back" size={22} color="#fff" />
+  </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>DPD QUEUE</Text>
+  {/* TITLE */}
+  <Text style={styles.headerTitle}>DPD QUEUE</Text>
 
-        <View style={{ width: 22 }} />
-      </View>
+  {/* HOME BUTTON */}
+  <TouchableOpacity
+    onPress={async () => {
+      const saved = await AsyncStorage.getItem("LOGGED_USER");
+      const user = saved ? JSON.parse(saved) : null;
+
+      if (!user) {
+        alert("Session expired. Please login again.");
+        return;
+      }
+
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Home", params: { user } }],
+      });
+    }}
+  >
+    <Ionicons name="home" size={22} color="#fff" />
+  </TouchableOpacity>
+</View>
 
       {/* ===== CARD ===== */}
  <FlatList

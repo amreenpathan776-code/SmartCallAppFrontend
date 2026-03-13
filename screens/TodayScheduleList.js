@@ -15,6 +15,7 @@ import {
 import Ionicons from "react-native-vector-icons/Ionicons";
 import BASE_URL from "./config";
 import { useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function TodayScheduleList({ route, navigation }) {
   const { userId, type } = route.params; // type = CALL / VISIT
@@ -184,17 +185,43 @@ export default function TodayScheduleList({ route, navigation }) {
 
                 Alert.alert("Start Visit", "Do you want to start the visit?", [
                   { text: "No", style: "cancel" },
-                  {
-                    text: "Yes",
-                    onPress: () => {
-                     navigation.navigate("AccountDetails", {
-  loanAccountNumber: item.LoanAccountNumber,
-  openFlow: "VISIT_START",
-  visitSource: "SCHEDULE",
-});
+                 {
+  text: "Yes",
+  onPress: async () => {
 
-                    },
-                  },
+const activeVisit = await AsyncStorage.getItem("ACTIVE_VISIT_SESSION");
+
+if (activeVisit) {
+
+  Alert.alert(
+    "Visit Already Running",
+    "You already have a visit in progress. Opening that visit.",
+    [
+      {
+        text: "Continue Visit",
+        onPress: () => {
+          navigation.navigate("AccountDetails", {
+            loanAccountNumber: item.LoanAccountNumber,
+            openFlow: "VISIT_START",
+            visitSource: "SCHEDULE",
+          });
+        },
+      },
+      { text: "Cancel", style: "cancel" },
+    ]
+  );
+
+  return;
+}
+
+    navigation.navigate("AccountDetails", {
+      loanAccountNumber: item.LoanAccountNumber,
+      openFlow: "VISIT_START",
+      visitSource: "SCHEDULE",
+    });
+
+  },
+}
                 ]);
               }}
             >
@@ -217,17 +244,29 @@ export default function TodayScheduleList({ route, navigation }) {
   }
 const groupByDate = (data) => {
   const grouped = {};
+  const today = new Date();
 
   data.forEach((item) => {
-    const rawDate =
+    let rawDate;
+
+    const isCompleted =
       type === "CALL"
-        ? item.ScheduleCallTimestamp
-        : item.ScheduleVisitTimestamp;
+        ? Number(item.ScheduleCallCompletedFlag) === 1
+        : Number(item.ScheduleVisitCompletedFlag) === 1;
+
+    // 🔥 If completed → use UpdatedAt
+    if (isCompleted) {
+      rawDate = item.UpdatedAt;
+    } else {
+      rawDate =
+        type === "CALL"
+          ? item.ScheduleCallTimestamp
+          : item.ScheduleVisitTimestamp;
+    }
 
     if (!rawDate) return;
 
     const dateObj = new Date(rawDate);
-    const today = new Date();
 
     const formatted =
       dateObj.toDateString() === today.toDateString()
@@ -241,25 +280,59 @@ const groupByDate = (data) => {
     grouped[formatted].push(item);
   });
 
-  return Object.keys(grouped).map((date) => ({
+  // 🔥 Convert to sections
+  const sections = Object.keys(grouped).map((date) => ({
     title: date,
     data: grouped[date],
   }));
+
+  // 🔥 SORT SECTIONS (Latest first, TODAY always top)
+  sections.sort((a, b) => {
+    if (a.title === "TODAY") return -1;
+    if (b.title === "TODAY") return 1;
+
+    const dateA = new Date(a.title.split("/").reverse().join("-"));
+    const dateB = new Date(b.title.split("/").reverse().join("-"));
+
+    return dateB - dateA;
+  });
+
+  return sections;
 };
   return (
     <View style={styles.container}>
       {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+     <View style={styles.header}>
+  {/* BACK BUTTON */}
+  <TouchableOpacity onPress={() => navigation.goBack()}>
+    <Ionicons name="arrow-back" size={24} color="#fff" />
+  </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>
-          Today {type === "CALL" ? "Call" : "Visit"} Schedule
-        </Text>
+  {/* TITLE */}
+  <Text style={styles.headerTitle}>
+    Today {type === "CALL" ? "Call" : "Visit"} Schedule
+  </Text>
 
-        <View style={{ width: 24 }} />
-      </View>
+  {/* HOME BUTTON */}
+  <TouchableOpacity
+    onPress={async () => {
+      const saved = await AsyncStorage.getItem("LOGGED_USER");
+      const user = saved ? JSON.parse(saved) : null;
+
+      if (!user) {
+        Alert.alert("Session expired", "Please login again.");
+        return;
+      }
+
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Home", params: { user } }],
+      });
+    }}
+  >
+    <Ionicons name="home" size={22} color="#fff" />
+  </TouchableOpacity>
+</View>
 
       {/* ✅ SEARCH BAR */}
       <View style={styles.searchContainer}>

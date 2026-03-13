@@ -15,6 +15,9 @@ import LeadFormScreen from "./LeadFormScreen";
 import LeadDetailsScreen from "./LeadDetailsScreen";
 import ActivityHistoryScreen from "./ActivityHistoryScreen";
 import ActivityHistoryDetailsScreen from "./ActivityHistoryDetailsScreen";
+import SMAScreen from "./SMAScreen";
+import SMAResults from "./SMAResults";
+
 
 const Stack = createNativeStackNavigator();
 
@@ -43,6 +46,9 @@ export default function App() {
   name="ActivityHistoryDetails"
   component={ActivityHistoryDetailsScreen}
 />
+<Stack.Screen name="SMA" component={SMAScreen} />
+<Stack.Screen name="SMAResults" component={SMAResults}/>
+
 <Stack.Screen name="LeadForm" component={LeadFormScreen} />
       </Stack.Navigator>
     </NavigationContainer>

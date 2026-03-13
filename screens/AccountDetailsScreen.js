@@ -144,6 +144,10 @@ if (typeof exitToDPDList === "function") {
   );
 };
 
+const ACTIVE_VISIT_KEY = "ACTIVE_VISIT_SESSION";
+const VISIT_START_TIME_KEY = "VISIT_START_TIME";
+const ACTIVE_VISIT_SNO_KEY = "ACTIVE_VISIT_SNO";
+const ACTIVE_VISIT_USER_KEY = "ACTIVE_VISIT_USER";
 
 
 const ReasonSubmitBlock = ({
@@ -294,12 +298,15 @@ const startCallSession = async () => {
     const res = await fetch(`${BASE_URL}/api/activity/session/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        loanAccountNumber,
-        sessionType: "CALL",
-        userId: user.UserId,       // ✅ REAL
-        userName: user.UserName,   // ✅ REAL
-      }),
+body: JSON.stringify({
+  loanAccountNumber,
+  sessionType: "CALL",
+  userId: user.UserId,
+  userName: user.UserName,
+
+  sourceType: "NPA",
+  sourceId: loanAccountNumber,
+}),
     });
 
     const data = await res.json();
@@ -317,7 +324,9 @@ const logCallAction = async ({
   metadata = null,
   noteText = null,
 }) => {
-  if (!callSessionId) return;
+  if (!callSessionId) {
+  console.log("Call session missing");
+}
 
   try {
     const user = await getLoggedUser();
@@ -326,16 +335,19 @@ const logCallAction = async ({
     await fetch(`${BASE_URL}/api/activity/log`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: callSessionId,
-        actionCode,
-        actionLabel,
-        reasonCode,
-        metadata,
-        noteText,
-        userId: user.UserId,       // ✅ REAL
-        userName: user.UserName,   // ✅ REAL
-      }),
+    body: JSON.stringify({
+  sessionId: callSessionId,
+  actionCode,
+  actionLabel,
+  reasonCode,
+  metadata,
+  noteText,
+  userId: user.UserId,
+  userName: user.UserName,
+
+  sourceType: "NPA",
+  sourceId: loanAccountNumber,
+}),
     });
   } catch (err) {
     console.error("Log action failed", err);
@@ -416,6 +428,7 @@ const [visitSessionId, setVisitSessionId] = useState(null);
 const startVisitSession = async () => {
   try {
     const user = await getLoggedUser();
+
     if (!user?.UserId || !user?.UserName) {
       Alert.alert("Error", "Login expired. Please login again.");
       return null;
@@ -430,12 +443,31 @@ const startVisitSession = async () => {
         sessionType: "VISIT",
         userId: user.UserId,
         userName: user.UserName,
+        sourceType: "NPA",
+        sourceId: loanAccountNumber,
       }),
     });
 
     const data = await res.json();
-    setVisitSessionId(data.sessionId);
-    return data.sessionId;
+
+    const sessionId = (data.sessionId || data.SessionId)?.toString();
+
+    if (!sessionId) {
+      console.log("Visit session missing from API response", data);
+      return null;
+    }
+
+    setVisitSessionId(sessionId);
+
+    // ⭐ SAVE SESSION GLOBALLY
+    await AsyncStorage.setItem(ACTIVE_VISIT_KEY, sessionId);
+    await AsyncStorage.setItem(
+      ACTIVE_VISIT_USER_KEY,
+      user.UserId.toString()
+    );
+
+    return sessionId;
+
   } catch (err) {
     console.error("Start visit session failed", err);
     return null;
@@ -447,18 +479,33 @@ const logVisitAction = async ({
   reasonCode = null,
   metadata = null,
   noteText = null,
+  sessionIdOverride = null
 }) => {
-  if (!visitSessionId) return;
+
+  let sessionIdToUse = sessionIdOverride || visitSessionId;
+
+  // ⭐ RECOVER SESSION IF STATE LOST
+  if (!sessionIdToUse) {
+    sessionIdToUse = await AsyncStorage.getItem(ACTIVE_VISIT_KEY);
+  }
+if (!sessionIdToUse) {
+  console.log("⚠ Session missing — backend will recover");
+}
 
   try {
     const user = await getLoggedUser();
     if (!user?.UserId || !user?.UserName) return;
 
+    console.log("🚀 VISIT LOG SENDING:", {
+      actionCode,
+      sessionId: sessionIdToUse,
+    });
+
     await fetch(`${BASE_URL}/api/activity/log`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sessionId: visitSessionId,
+        sessionId: Number(sessionIdToUse),
         actionCode,
         actionLabel,
         reasonCode,
@@ -466,32 +513,67 @@ const logVisitAction = async ({
         noteText,
         userId: user.UserId,
         userName: user.UserName,
+        sourceType: "NPA",
+        sourceId: loanAccountNumber,
       }),
     });
+
   } catch (err) {
     console.error("Log visit action failed", err);
   }
 };
 const endVisitSession = async () => {
+  if (!visitSessionId) return;
+
   try {
-    console.log("🛑 Ending visit session");
-    setVisitSessionId(null);
-    console.log("✅ Visit session cleared");
+    await fetch(`${BASE_URL}/api/activity/session/end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: visitSessionId
+      }),
+    });
+
   } catch (err) {
-    console.log("endVisitSession error:", err);
+    console.error("End visit session failed", err);
+  } finally {
+    setVisitSessionId(null);
+
+    await AsyncStorage.removeItem(ACTIVE_VISIT_KEY);
+    await AsyncStorage.removeItem("ACTIVE_VISIT_SNO");
+    await AsyncStorage.removeItem("VISIT_START_TIME");
+    await AsyncStorage.removeItem("ACTIVE_VISIT_USER");
+  }
+};
+const resetVisitAndReturnToSchedule = async () => {
+  try {
+
+    const user = await getLoggedUser();
+
+    await fetch(`${BASE_URL}/api/visit/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        loanAccountNumber,
+        userId: user.UserId
+      }),
+    });
+
+    // stop visit session
+    await endVisitSession();
+
+    // reset UI
+    resetVisitFlow();
+
+    Alert.alert("Visit Reset", "Account moved back to Schedule");
+
+    navigation.goBack();
+
+  } catch (e) {
+    console.log("Reset visit error:", e);
   }
 };
 
-// ===============================
-// STEP: SAFETY AUTO-END VISIT SESSION
-// ===============================
-useEffect(() => {
-  return () => {
-    if (visitSessionId) {
-      endVisitSession();
-    }
-  };
-}, [visitSessionId]);
 
 const pushStep = () => {
   setFlowStack(prev => [
@@ -719,13 +801,21 @@ const exitToDPDList = async () => {
 // 🚀 MASTER START VISIT (TODAY + UNSCHEDULED USE SAME)
 const startVisitFlow = async () => {
   try {
-setIsVisitFullScreen(true); 
+setIsVisitFullScreen(false); 
     setVisitStage("IDLE");
     setShowVisitModal(true);
 
     // ✅ 2) Start VISIT session first (fast operation)
     const sessionId = await startVisitSession();
     if (!sessionId) return;
+setVisitSessionId(sessionId);
+
+// ⭐ save active visit globally
+await AsyncStorage.setItem(ACTIVE_VISIT_KEY, sessionId);
+await AsyncStorage.setItem(VISIT_START_TIME_KEY, Date.now().toString());
+
+const user = await getLoggedUser();
+await AsyncStorage.setItem(ACTIVE_VISIT_USER_KEY, user.UserId.toString());
 
     // ✅ 3) Capture start location
     const coords = await handleCaptureLocation();
@@ -743,19 +833,20 @@ setIsVisitFullScreen(true);
     if (!sno) return;
 
     setCurrentVisitSNo(sno);
-
+await AsyncStorage.setItem(ACTIVE_VISIT_SNO_KEY, sno.toString());
     // ✅ 5) Log
-    await logVisitAction({
-      actionCode: "VISIT_STARTED",
-      actionLabel: "Visit Started",
-      metadata: {
-        sno,
-        startLat: coords.latitude,
-        startLng: coords.longitude,
-        accuracy: coords.acacy,
-        address: coords.address,
-      },
-    });
+await logVisitAction({
+  actionCode: "VISIT_STARTED",
+  actionLabel: "Visit Started",
+  sessionIdOverride: sessionId,
+  metadata: {
+    sno,
+    startLat: coords.latitude,
+    startLng: coords.longitude,
+    accuracy: coords.accuracy,
+    address: coords.address,
+  },
+});
 
   } catch (e) {
     console.log("Start visit error:", e);
@@ -852,7 +943,7 @@ const resetNotReadyFlow = () => {
 };
 const resetVisitFlow = () => {
 setIsVisitFullScreen(false); 
- setShowVisitModal(false);
+ //setShowVisitModal(false);
 
   // visit flow
   setVisitStage("IDLE");
@@ -1065,6 +1156,70 @@ if (openFlow === "VISIT_START") {
 
 }, [account, openFlow]);
 
+useEffect(() => {
+
+  const restoreVisit = async () => {
+
+    const activeVisit = await AsyncStorage.getItem(ACTIVE_VISIT_KEY);
+    const visitSNo = await AsyncStorage.getItem(ACTIVE_VISIT_SNO_KEY);
+    const visitUser = await AsyncStorage.getItem(ACTIVE_VISIT_USER_KEY);
+
+    const user = await getLoggedUser();
+
+    if (activeVisit && visitUser === user?.UserId?.toString()) {
+
+      setVisitSessionId(activeVisit);
+
+      if (visitSNo) {
+        setCurrentVisitSNo(parseInt(visitSNo));
+      }
+
+      Alert.alert(
+        "Visit Running",
+        "You have an active visit. Please stop it before starting another."
+      );
+    }
+
+  };
+
+  restoreVisit();
+
+}, []);
+useEffect(() => {
+
+  const interval = setInterval(async () => {
+
+    const startTime = await AsyncStorage.getItem(VISIT_START_TIME_KEY);
+    const visitUser = await AsyncStorage.getItem(ACTIVE_VISIT_USER_KEY);
+
+    if (!startTime) return;
+
+    const user = await getLoggedUser();
+
+    // ✅ reminder only for same user
+    if (visitUser !== user?.UserId?.toString()) return;
+
+    const elapsed = Date.now() - parseInt(startTime);
+
+    if (elapsed > 20 * 60 * 1000) {
+
+      Alert.alert(
+        "Visit Reminder",
+        "Visit has been running for 20 minutes. Please stop it if completed."
+      );
+
+    }
+
+  }, 60000);
+
+  return () => clearInterval(interval);
+
+}, []);
+useEffect(() => {
+  if (visitSessionId && !showVisitModal) {
+    setShowVisitModal(true);
+  }
+}, [visitSessionId]);
 
   const fetchAccountDetails = async () => {
     try {
@@ -1294,19 +1449,99 @@ if (altNumber && altNumber.length === 10) {
 
   return (
     <View style={styles.container}>
+{visitSessionId && (
+  <View
+    style={{
+      backgroundColor: "#fde68a",
+      padding: 15,
+      alignItems: "center"
+    }}
+  >
+
+    {/* Continue Visit */}
+    <TouchableOpacity
+      onPress={async () => {
+
+        const storedSession = await AsyncStorage.getItem(ACTIVE_VISIT_KEY);
+        const visitSNo = await AsyncStorage.getItem(ACTIVE_VISIT_SNO_KEY);
+
+        if (storedSession) {
+          setVisitSessionId(storedSession);
+        }
+
+        if (visitSNo) {
+          setCurrentVisitSNo(parseInt(visitSNo));
+        }
+
+        setShowVisitModal(true);
+        setVisitStage("IDLE");
+
+      }}
+    >
+      <Text style={{ fontWeight: "bold", color: "#73320a", marginBottom: 2, paddingTop:12 }}>
+        ⚠ Visit in progress. Tap here to continue the visit.
+      </Text>
+    </TouchableOpacity>
+
+
+    {/* NEW RESET VISIT BUTTON 
+    <TouchableOpacity
+      style={{
+        backgroundColor: "#ef4444",
+        paddingVertical: 8,
+        paddingHorizontal: 20,
+        borderRadius: 6
+      }}
+      onPress={resetVisitAndReturnToSchedule}
+    >
+      <Text style={{ color: "#fff", fontWeight: "bold" }}>
+        RESET VISIT
+      </Text>
+    </TouchableOpacity>
+*/}
+  </View>
+)}
+  
 
       {/* ===== HEADER ===== */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+   <View style={styles.header}>
+  <TouchableOpacity onPress={() => navigation.goBack()}>
+    <Ionicons name="arrow-back" size={24} color="#fff" />
+  </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>
-          CALLING NPA - CUSTOMER DETAILS
-        </Text>
+  <Text style={styles.headerTitle}>
+    CALLING NPA - CUSTOMER DETAILS
+  </Text>
+ {/*
+<TouchableOpacity
+  style={{ backgroundColor: "red", padding: 2, margin: 2 }}
+  onPress={async () => {
+    await AsyncStorage.removeItem(ACTIVE_VISIT_KEY);
+    await AsyncStorage.removeItem("VISIT_START_TIME");
+    await AsyncStorage.removeItem("ACTIVE_VISIT_SNO");
 
-        <Ionicons name="home" size={22} color="#fff" />
-      </View>
+    Alert.alert("Reset Done", "Visit storage cleared. Restart the app.");
+  }}
+>
+  <Text style={{ color: "#fff" }}>RESET VISIT</Text>
+</TouchableOpacity> 
+*/}
+
+  {/* ✅ FIXED HOME BUTTON */}
+  <TouchableOpacity
+    onPress={async () => {
+      const saved = await AsyncStorage.getItem("LOGGED_USER");
+      const user = saved ? JSON.parse(saved) : null;
+
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Home", params: { user } }],
+      });
+    }}
+  >
+    <Ionicons name="home" size={22} color="#fff" />
+  </TouchableOpacity>
+</View>
 
       {/* ===== BODY ===== */}
       <ScrollView contentContainerStyle={styles.body}>
@@ -1397,7 +1632,24 @@ onChangeText={(text) => {
 
 <TouchableOpacity
   style={styles.visitBtn}
-  onPress={startVisitFlow}
+onPress={async () => {
+
+const activeVisit = await AsyncStorage.getItem(ACTIVE_VISIT_KEY);
+const visitUser = await AsyncStorage.getItem(ACTIVE_VISIT_USER_KEY);
+
+const user = await getLoggedUser();
+
+if (activeVisit && visitUser === user?.UserId?.toString()) {
+  Alert.alert(
+    "Visit Already Running",
+    "You must stop your current visit before starting another."
+  );
+  return;
+}
+
+  startVisitFlow();
+
+}}
 >
   <Ionicons name="walk" size={18} color="#fff" />
   <Text style={styles.btnText}>UNSCHEDULED VISIT</Text>
@@ -2880,14 +3132,27 @@ onPress={async () => {
     {/* 🚫 NO RESPONSE / BUSY */}
     <TouchableOpacity
       style={styles.optionRowAligned}
-onPress={() => {
-  logCallAction({
-  actionCode: "CALL_BUSY",
-  actionLabel: "Customer Busy / No Response",
-});
+onPress={async () => {
 
-  pushStep();
-  setDidNotSpeakChoice("BUSY");
+  await logCallAction({
+    actionCode: "CALL_BUSY",
+    actionLabel: "Customer Busy"
+  });
+
+  Alert.alert(
+    "Customer Busy",
+    "Attempt recorded",
+    [
+      {
+        text: "OK",
+        onPress: async () => {
+          await endCallSession();
+          exitToDPDList();
+        }
+      }
+    ]
+  );
+
 }}
       activeOpacity={0.85}
     >
@@ -2913,14 +3178,27 @@ onPress={() => {
     {/* 📵 NOT REACHABLE */}
     <TouchableOpacity
       style={styles.optionRowAligned}
-onPress={() => {
-  logCallAction({
-  actionCode: "CALL_NOT_REACHABLE",
-  actionLabel: "Customer Not Reachable",
-});
+onPress={async () => {
 
-  pushStep();
-  setDidNotSpeakChoice("NOT_REACHABLE");
+  await logCallAction({
+    actionCode: "CALL_NOT_REACHABLE",
+    actionLabel: "Customer Not Reachable"
+  });
+
+  Alert.alert(
+    "Not Reachable",
+    "Attempt recorded",
+    [
+      {
+        text: "OK",
+        onPress: async () => {
+          await endCallSession();
+          exitToDPDList();
+        }
+      }
+    ]
+  );
+
 }}
       activeOpacity={0.85}
     >
@@ -2946,16 +3224,29 @@ onPress={() => {
     {/* ❌ INVALID NUMBER */}
     <TouchableOpacity
       style={styles.optionRowAligned}
-onPress={() => {
-  logCallAction({
-  actionCode: "INVALID_NUMBER",
-  actionLabel: "Invalid Phone Number",
-});
+onPress={async () => {
 
-  pushStep();
-  setDidNotSpeakChoice("INVALID");
-  setInvalidNumberFlow(true);
-  setCalendarMode("INVALID_NUMBER_VISIT");
+  await logCallAction({
+    actionCode: "INVALID_NUMBER",
+    actionLabel: "Invalid Phone Number",
+  });
+
+  Alert.alert(
+    "Invalid Number",
+    "Please schedule a physical visit to verify the customer.",
+    [
+      {
+        text: "OK",
+        onPress: () => {
+          pushStep();
+          setDidNotSpeakChoice("INVALID");
+          setInvalidNumberFlow(true);
+          setCalendarMode("INVALID_NUMBER_VISIT");
+        }
+      }
+    ]
+  );
+
 }}
 
       activeOpacity={0.85}
@@ -3416,12 +3707,9 @@ navigation.goBack();
   onRequestClose={resetVisitFlow}
 
 >
-  {/* Backdrop */}
-  <TouchableOpacity
-    style={styles.modalOverlay}
-    activeOpacity={1}
-    onPress={resetVisitFlow}
-  >
+<View
+  style={styles.modalOverlay}
+>
     {/* Dialog Card */}
  <TouchableOpacity
   activeOpacity={1}
@@ -3541,18 +3829,28 @@ onPress={async () => {
           const stop = await captureStopLocation();
           if (!stop) return;
 
-          // 2️⃣ Validate visit session
-          if (!currentVisitSNo) {
-            Alert.alert("Error", "Visit session missing.");
-            return;
-          }
+        // 2️⃣ Get visit SNo safely
+let sno = currentVisitSNo;
+
+if (!sno) {
+  const storedSNo = await AsyncStorage.getItem(ACTIVE_VISIT_SNO_KEY);
+  if (storedSNo) {
+    sno = parseInt(storedSNo);
+    setCurrentVisitSNo(sno);
+  }
+}
+
+if (!sno) {
+  Alert.alert("Error", "Visit session missing.");
+  return;
+}
 
           // 3️⃣ Send stop details to backend (NO distance calculation here)
           const res = await fetch(`${BASE_URL}/api/field-visit/stop`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              sno: currentVisitSNo,
+              sno: sno,
               stopLat: stop.latitude,
               stopLng: stop.longitude,
               stopAddress: stop.address,
@@ -3573,7 +3871,7 @@ onPress={async () => {
             actionCode: "VISIT_STOP_CONFIRMED",
             actionLabel: "Visit Stop Confirmed",
             metadata: {
-              sno: currentVisitSNo,
+              sno: sno,
               stopLat: stop.latitude,
               stopLng: stop.longitude,
               stopAccuracy: stop.accuracy,
@@ -3582,12 +3880,22 @@ onPress={async () => {
             },
           });
 
-          // 5️⃣ Success alert
-          Alert.alert(
-            "✅ Visit Stopped",
-            `Distance Travelled: ${distanceKm} km\n\n📍 ${stop.address}`
-          );
+   // ✅ END VISIT SESSION
+await endVisitSession();
 
+// ✅ CLEAR ACTIVE VISIT STORAGE
+await AsyncStorage.removeItem(ACTIVE_VISIT_KEY);
+await AsyncStorage.removeItem(VISIT_START_TIME_KEY);
+await AsyncStorage.removeItem(ACTIVE_VISIT_SNO_KEY);
+await AsyncStorage.removeItem(ACTIVE_VISIT_USER_KEY);
+
+setVisitSessionId(null);
+
+// 5️⃣ Success alert
+Alert.alert(
+  "✅ Visit Stopped",
+  `Distance Travelled: ${distanceKm} km\n\n📍 ${stop.address}`
+);
           // 6️⃣ Reset flow
           setFlowStack([]);
           resetVisitFlow();
@@ -4952,7 +5260,7 @@ setShowCloseAccountModal(true);
 
 </View>
     </TouchableOpacity>
-  </TouchableOpacity>
+</View>
 </Modal>
 
       {/* ===== CALL MODAL ===== */}

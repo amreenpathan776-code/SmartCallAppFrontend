@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import BASE_URL from "./config";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function DPDListScreen({ route, navigation }) {
   const { dpdQueue, userId } = route.params;
@@ -22,6 +23,7 @@ export default function DPDListScreen({ route, navigation }) {
   const [searchText, setSearchText] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+const [activeTab, setActiveTab] = useState("ALL");
 
   useFocusEffect(
     useCallback(() => {
@@ -40,8 +42,22 @@ export default function DPDListScreen({ route, navigation }) {
       const result = await response.json();
       const records = result.records || [];
 
-      setData(records);
-      setFilteredData(records);
+const today = new Date().toISOString().split("T")[0];
+
+const filteredRecords = records.filter((item) => {
+  if (item.AccountStatus !== "COMPLETED") return true;
+
+  if (!item.CompletedAt) return false;
+
+  const completedDate = new Date(item.CompletedAt)
+    .toISOString()
+    .split("T")[0];
+
+  return completedDate === today;
+});
+
+setData(filteredRecords);
+setFilteredData(filteredRecords);
       setLoading(false);
     } catch (error) {
       console.error("DPD Fetch Error:", error);
@@ -134,15 +150,22 @@ style={[
 
       <Text style={styles.sub}>Loan A/c: {item.loanAccountNumber}</Text>
 
-  <View style={styles.row}>
+ <View style={styles.row}>
+
   <View style={styles.phoneRow}>
     <Ionicons name="call" size={18} color="#27ae60" />
     <Text style={styles.phoneText}>{item.mobileNumber}</Text>
   </View>
 
-  <Text style={styles.amount}>₹ {item.overdueAmount}</Text>
-</View>
+  <View style={{alignItems:"flex-end"}}>
+    <Text style={styles.amount}>₹ {item.overdueAmount}</Text>
 
+    <Text style={{fontSize:11,color:"#555"}}>
+      Attempt No : {item.AttemptCount || 0}
+    </Text>
+  </View>
+
+</View>
     </TouchableOpacity>
   );
 
@@ -158,13 +181,35 @@ style={[
   return (
     <View style={styles.container}>
       {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>DPD Accounts</Text>
-        <View style={{ width: 24 }} />
-      </View>
+ <View style={styles.header}>
+  {/* BACK BUTTON */}
+  <TouchableOpacity onPress={() => navigation.goBack()}>
+    <Ionicons name="arrow-back" size={24} color="#fff" />
+  </TouchableOpacity>
+
+  {/* TITLE */}
+  <Text style={styles.headerTitle}>DPD Accounts</Text>
+
+  {/* HOME BUTTON */}
+  <TouchableOpacity
+    onPress={async () => {
+      const saved = await AsyncStorage.getItem("LOGGED_USER");
+      const user = saved ? JSON.parse(saved) : null;
+
+      if (!user) {
+        Alert.alert("Error", "User session expired. Please login again.");
+        return;
+      }
+
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Home", params: { user } }],
+      });
+    }}
+  >
+    <Ionicons name="home" size={22} color="#fff" />
+  </TouchableOpacity>
+</View>
 
       {/* SEARCH */}
       <View style={styles.searchContainer}>
@@ -176,7 +221,41 @@ style={[
           onChangeText={handleSearch}
         />
       </View>
+{/* STATUS TABS */}
+<View style={styles.tabContainer}>
 
+  {["ALL", "PENDING", "IN PROCESS", "COMPLETED"].map((tab) => (
+    <TouchableOpacity
+      key={tab}
+      style={[
+        styles.tabButton,
+        activeTab === tab && styles.activeTab,
+      ]}
+      onPress={() => {
+        setActiveTab(tab);
+
+        if (tab === "ALL") {
+          setFilteredData(data);
+        } else {
+          const filtered = data.filter(
+            (item) => item.AccountStatus === tab
+          );
+          setFilteredData(filtered);
+        }
+      }}
+    >
+      <Text
+        style={[
+          styles.tabText,
+          activeTab === tab && styles.activeTabText,
+        ]}
+      >
+        {tab}
+      </Text>
+    </TouchableOpacity>
+  ))}
+
+</View>
       {/* LIST */}
       <FlatList
         data={filteredData}
@@ -271,5 +350,32 @@ personRow: {
   alignItems: "center",
   gap: 6,
 },
+tabContainer: {
+  flexDirection: "row",
+  justifyContent: "space-around",
+  marginHorizontal: 10,
+  marginTop: 10,
+  marginBottom: 5,
+},
 
+tabButton: {
+  paddingVertical: 6,
+  paddingHorizontal: 10,
+  borderRadius: 20,
+  backgroundColor: "#e5e7eb",
+},
+
+activeTab: {
+  backgroundColor: "#0a3d62",
+},
+
+tabText: {
+  fontSize: 12,
+  fontWeight: "600",
+  color: "#333",
+},
+
+activeTabText: {
+  color: "#fff",
+},
 });

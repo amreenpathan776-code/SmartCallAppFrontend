@@ -14,10 +14,11 @@ import {
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { Calendar } from "react-native-calendars";
 import BASE_URL from "./config";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function LeadDetailsScreen({ route, navigation }) {
   const { lead } = route.params;
-
+const [callSessionId, setCallSessionId] = useState(null);
   const [leadDetails, setLeadDetails] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [openAfterDial, setOpenAfterDial] = useState(false);
@@ -34,8 +35,7 @@ export default function LeadDetailsScreen({ route, navigation }) {
 
   const [calendarMode, setCalendarMode] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
-  const [losSubmitted, setLosSubmitted] = useState(false);
-
+const [losSubmitted, setLosSubmitted] = useState(false);
   const [hour, setHour] = useState("10");
 const [minute, setMinute] = useState("00");
 const [ampm, setAmpm] = useState("AM");
@@ -56,19 +56,20 @@ const [notInterestedOtherSubmitted, setNotInterestedOtherSubmitted] = useState(f
     return () => subscription.remove();
   }, [openAfterDial]);
 
-  const resetFlow = () => {
-    setCallStage("MAIN");
-    setSpokeChoice(null);
-    setNotInterestedChoice(null);
-    setProductChoice(null);
-    setDidNotSpeakChoice(null);
-    setAccountNumber("");
-    setLosSubmitted(false);
-    setOtherReason("");
-    setCalendarMode(null);
-    setSelectedDate(null);
-    setNotInterestedOtherSubmitted(false);
-  };
+const resetFlow = () => {
+  setCallStage("MAIN");
+  setSpokeChoice(null);
+  setNotInterestedChoice(null);
+  setProductChoice(null);
+  setDidNotSpeakChoice(null);
+  setAccountNumber("");
+  setLosSubmitted(false);
+  setOtherReason("");
+  setCalendarMode(null);
+  setSelectedDate(null);
+  setNotInterestedOtherSubmitted(false);
+  setProductOtherSubmitted(false); // add this
+};
 
   const fetchLeadDetails = async () => {
     try {
@@ -79,21 +80,100 @@ const [notInterestedOtherSubmitted, setNotInterestedOtherSubmitted] = useState(f
       Alert.alert("Error fetching lead details");
     }
   };
+const startCallSession = async () => {
+  const saved = await AsyncStorage.getItem("LOGGED_USER");
+  const user = saved ? JSON.parse(saved) : null;
 
-  const handleCall = () => {
-    if (!leadDetails?.MobileNumber) {
-      Alert.alert("No Number Available");
-      return;
+  if (!user?.UserId) {
+    Alert.alert("Session expired");
+    return null;
+  }
+
+  const res = await fetch(`${BASE_URL}/api/activity/session/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      loanAccountNumber: null,   // not NPA
+      sessionType: "CALL",
+      userId: user.UserId,
+      userName: user.UserName,
+
+      sourceType: "LEAD",
+      sourceId: lead.SNo,
+    }),
+  });
+
+  const data = await res.json();
+  setCallSessionId(data.sessionId);
+  return data.sessionId;
+};
+const logCallAction = async ({
+  actionCode,
+  actionLabel,
+  reasonCode = null,
+  metadata = null,
+  noteText = null,
+}) => {
+  if (!callSessionId) return;
+
+  const saved = await AsyncStorage.getItem("LOGGED_USER");
+  const user = saved ? JSON.parse(saved) : null;
+
+  await fetch(`${BASE_URL}/api/activity/log`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: callSessionId,
+      actionCode,
+      actionLabel,
+      reasonCode,
+      metadata,
+      noteText,
+      userId: user.UserId,
+      userName: user.UserName,
+
+      sourceType: "LEAD",
+      sourceId: lead.SNo,
+    }),
+  });
+};
+const handleCall = async () => {
+  if (!leadDetails?.MobileNumber) {
+    Alert.alert("No Number Available");
+    return;
+  }
+
+  // 🔥 OPEN DIAL FIRST (do not wait for backend)
+  setOpenAfterDial(true);
+  Linking.openURL(`tel:${leadDetails.MobileNumber}`);
+
+  try {
+    const sessionId = await startCallSession();
+
+    if (sessionId) {
+      await logCallAction({
+        actionCode: "CALL_DIALED",
+        actionLabel: "Call Dialed",
+        metadata: { phoneNumber: leadDetails.MobileNumber },
+      });
     }
-    setOpenAfterDial(true);
-    Linking.openURL(`tel:${leadDetails.MobileNumber}`);
-  };
+  } catch (e) {
+    console.log("Session start failed but dial opened");
+  }
+};
+const closeAndExit = async () => {
+  if (callSessionId) {
+    await fetch(`${BASE_URL}/api/activity/session/end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: callSessionId }),
+    });
+  }
 
-  const closeAndExit = () => {
-    setShowModal(false);
-    resetFlow();
-    navigation.goBack();
-  };
+  setShowModal(false);
+  resetFlow();
+  navigation.goBack();
+};
 
   if (!leadDetails) {
     return (
@@ -117,10 +197,25 @@ const handleModalBack = () => {
   }
 
   // If in not interested reason
-  if (notInterestedChoice) {
-    setNotInterestedChoice(null);
+// Handle NOT INTERESTED flow
+if (notInterestedChoice === "OTHERS") {
+
+  // If currently in Three Buttons → go back to reason input
+  if (notInterestedOtherSubmitted) {
+    setNotInterestedOtherSubmitted(false);
     return;
   }
+
+  // If currently in reason input → go back to reason options
+  setNotInterestedChoice(null);
+  setOtherReason("");
+  return;
+}
+
+if (notInterestedChoice) {
+  setNotInterestedChoice(null);
+  return;
+}
 
   // If in spoke selection
   if (spokeChoice) {
@@ -147,13 +242,32 @@ const handleModalBack = () => {
     <View style={styles.container}>
 
       {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back-outline" size={22} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>LEAD MEMBER DETAILS</Text>
-        <Ionicons name="home-outline" size={22} color="#fff" />
-      </View>
+ <View style={styles.header}>
+  <TouchableOpacity onPress={() => navigation.goBack()}>
+    <Ionicons name="arrow-back-outline" size={22} color="#fff" />
+  </TouchableOpacity>
+
+  <Text style={styles.headerTitle}>LEAD MEMBER DETAILS</Text>
+
+  <TouchableOpacity
+    onPress={async () => {
+      const saved = await AsyncStorage.getItem("LOGGED_USER");
+      const user = saved ? JSON.parse(saved) : null;
+
+      if (!user) {
+        Alert.alert("Session expired", "Please login again.");
+        return;
+      }
+
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Home", params: { user } }],
+      });
+    }}
+  >
+    <Ionicons name="home" size={22} color="#fff" />
+  </TouchableOpacity>
+</View>
 
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.card}>
@@ -208,16 +322,28 @@ const handleModalBack = () => {
                 title="Call Outcome"
                 subtitle="Select call connection status"
                 options={[
-                  {
-                    icon: "chatbubble-outline",
-                    title: "Spoke to the Lead",
-                    action: () => setCallStage("SPOKE"),
-                  },
-                  {
-                    icon: "close-circle-outline",
-                    title: "Didn't Speak to the Lead",
-                    action: () => setCallStage("NOT_SPOKE"),
-                  },
+           {
+  icon: "chatbubble-outline",
+  title: "Spoke to the Lead",
+  action: async () => {
+    await logCallAction({
+      actionCode: "LEAD_SPOKE",
+      actionLabel: "Spoke to Lead",
+    });
+    setCallStage("SPOKE");
+  },
+},
+                 {
+  icon: "close-circle-outline",
+  title: "Didn't Speak to the Lead",
+  action: async () => {
+    await logCallAction({
+      actionCode: "LEAD_NOT_SPOKE",
+      actionLabel: "Did Not Speak to Lead",
+    });
+    setCallStage("NOT_SPOKE");
+  },
+},
                 ]}
               />
             )}
@@ -232,12 +358,24 @@ const handleModalBack = () => {
                   {
                     icon: "happy-outline",
                     title: "Is Interested",
-                    action: () => setSpokeChoice("INTERESTED"),
-                  },
+action: async () => {
+  await logCallAction({
+    actionCode: "LEAD_INTERESTED",
+    actionLabel: "Lead Interested",
+  });
+  setSpokeChoice("INTERESTED");
+},                 
+ },
                   {
                     icon: "close-circle-outline",
                     title: "Is Not Interested",
-                    action: () => setSpokeChoice("NOT_INTERESTED"),
+action: async () => {
+  await logCallAction({
+    actionCode: "LEAD_NOT_INTERESTED",
+    actionLabel: "Lead Not Interested",
+  });
+  setSpokeChoice("NOT_INTERESTED");
+},
                   },
                 ]}
               />
@@ -245,35 +383,33 @@ const handleModalBack = () => {
 
             {/* INTERESTED */}
 {spokeChoice === "INTERESTED" && !calendarMode && (
-  <>
-    {!losSubmitted ? (
-      <InputCard
-        icon="document-text-outline"
-        title="Enter LOS Number"
-        value={accountNumber}
-onChange={(text) => {
-  const numericValue = text.replace(/[^0-9]/g, "");
-  if (numericValue.length <= 10) {
-    setAccountNumber(numericValue);
-  }
-}}        placeholder="Enter LOS Number"
-        buttonTitle="Proceed"
-        onSubmit={() => {
- if (accountNumber.length < 1 || accountNumber.length > 10) {
-  Alert.alert("LOS number must be 1 to 10 digits");
-  return;
-}
-          setLosSubmitted(true);
-        }}
-      />
-    ) : (
-      <ThreeActionButtons
-        onSubmit={closeAndExit}
-        onScheduleCall={() => setCalendarMode("CALL")}
-        onScheduleVisit={() => setCalendarMode("VISIT")}
-      />
-    )}
-  </>
+  <InputCard
+    icon="document-text-outline"
+    title="Enter LOS Number"
+    value={accountNumber}
+    onChange={(text) => {
+      const numericValue = text.replace(/[^0-9]/g, "");
+      if (numericValue.length <= 10) {
+        setAccountNumber(numericValue);
+      }
+    }}
+    placeholder="Enter LOS Number"
+    buttonTitle="Submit"
+onSubmit={async () => {
+        if (accountNumber.length < 1 || accountNumber.length > 10) {
+        Alert.alert("LOS number must be 1 to 10 digits");
+        return;
+      }
+
+      // 🔥 Here you can call API if needed
+await logCallAction({
+  actionCode: "LEAD_LOS_CAPTURED",
+  actionLabel: "LOS Number Captured",
+  metadata: { losNumber: accountNumber },
+});
+      closeAndExit(); // directly end flow
+    }}
+  />
 )}
 
             {/* NOT INTERESTED */}
@@ -283,21 +419,47 @@ onChange={(text) => {
                 title="Reason"
                 subtitle="Select reason"
                 options={[
-                  {
-                    icon: "remove-circle-outline",
-                    title: "Does Not Require Loan",
-                    action: () => setNotInterestedChoice("NO_REQUIREMENT"),
-                  },
-                  {
-                    icon: "swap-horizontal-outline",
-                    title: "Interested in Another Product",
-                    action: () => setNotInterestedChoice("OTHER_PRODUCT"),
-                  },
-                  {
-                    icon: "ellipsis-horizontal-outline",
-                    title: "Others",
-                    action: () => setNotInterestedChoice("OTHERS"),
-                  },
+                 {
+  icon: "remove-circle-outline",
+  title: "Does Not Require Loan",
+  action: async () => {
+
+    Alert.alert(
+      "Customer Response",
+      "Customer does not require a loan.",
+      [{ text: "OK" }]
+    );
+
+    await logCallAction({
+      actionCode: "LEAD_NO_REQUIREMENT",
+      actionLabel: "Lead Does Not Require Loan",
+    });
+
+    closeAndExit();
+  },
+},
+{
+  icon: "swap-horizontal-outline",
+  title: "Interested in Another Product",
+  action: async () => {
+
+    await logCallAction({
+      actionCode: "LEAD_INTEREST_OTHER_PRODUCT",
+      actionLabel: "Lead Interested in Other Product",
+    });
+
+    setNotInterestedChoice("OTHER_PRODUCT");
+  },
+},
+{
+  icon: "ellipsis-horizontal-outline",
+  title: "Others",
+  action: () => {
+    setOtherReason("");
+    setNotInterestedOtherSubmitted(false);
+    setNotInterestedChoice("OTHERS");
+  },
+},
                 ]}
               />
             )}
@@ -313,17 +475,31 @@ onChange={(text) => {
         onChange={setOtherReason}
         placeholder="Enter reason..."
         buttonTitle="Proceed"
-        onSubmit={() => {
+        onSubmit={async () => {
           if (otherReason.trim().length < 3) {
             Alert.alert("Please enter proper reason");
             return;
           }
-          setNotInterestedOtherSubmitted(true);
+          await logCallAction({
+  actionCode: "LEAD_NOT_INTERESTED_OTHER_REASON",
+  actionLabel: "Lead Not Interested - Other Reason",
+  metadata: { reason: otherReason },
+});
+
+setNotInterestedOtherSubmitted(true);
         }}
       />
     ) : (
       <ThreeActionButtons
-        onSubmit={closeAndExit}
+        onSubmit={async () => {
+
+  await logCallAction({
+    actionCode: "LEAD_FLOW_SUBMITTED",
+    actionLabel: "Lead Flow Submitted",
+  });
+
+  closeAndExit();
+}}
         onScheduleCall={() => setCalendarMode("CALL")}
         onScheduleVisit={() => setCalendarMode("VISIT")}
       />
@@ -338,21 +514,45 @@ onChange={(text) => {
                 title="Select Product"
                 subtitle="Choose product type"
                 options={[
-                  {
-                    icon: "wallet-outline",
-                    title: "Deposits",
-                    action: () => setProductChoice("DEPOSITS"),
-                  },
-                  {
-                    icon: "cash-outline",
-                    title: "Loans",
-                    action: () => setProductChoice("LOANS"),
-                  },
-                  {
-                    icon: "ellipsis-horizontal-outline",
-                    title: "Others",
-                    action: () => setProductChoice("OTHERS"),
-                  },
+                 {
+  icon: "wallet-outline",
+  title: "Deposits",
+  action: async () => {
+
+    await logCallAction({
+      actionCode: "LEAD_PRODUCT_DEPOSIT",
+      actionLabel: "Lead Interested in Deposit Product",
+    });
+
+    setProductChoice("DEPOSITS");
+  },
+},
+{
+  icon: "cash-outline",
+  title: "Loans",
+  action: async () => {
+
+    await logCallAction({
+      actionCode: "LEAD_PRODUCT_LOAN",
+      actionLabel: "Lead Interested in Loan Product",
+    });
+
+    setProductChoice("LOANS");
+  },
+},
+{
+  icon: "ellipsis-horizontal-outline",
+  title: "Others",
+  action: async () => {
+
+    await logCallAction({
+      actionCode: "LEAD_PRODUCT_OTHER",
+      actionLabel: "Lead Interested in Other Product",
+    });
+
+    setProductChoice("OTHERS");
+  },
+}
                 ]}
               />
             )}
@@ -360,7 +560,15 @@ onChange={(text) => {
       {(productChoice === "DEPOSITS" ||
   productChoice === "LOANS") && !calendarMode && (
   <ThreeActionButtons
-                onSubmit={closeAndExit}
+                onSubmit={async () => {
+
+  await logCallAction({
+    actionCode: "LEAD_FLOW_SUBMITTED",
+    actionLabel: "Lead Flow Submitted",
+  });
+
+  closeAndExit();
+}}
                 onScheduleCall={() => setCalendarMode("CALL")}
                 onScheduleVisit={() => setCalendarMode("VISIT")}
               />
@@ -378,17 +586,31 @@ onChange={(text) => {
         onChange={setOtherReason}
         placeholder="Enter product..."
         buttonTitle="Proceed"
-        onSubmit={() => {
+       onSubmit={async () => {
           if (otherReason.trim().length < 2) {
             Alert.alert("Please enter product name");
             return;
           }
-          setProductOtherSubmitted(true);
+          await logCallAction({
+  actionCode: "LEAD_OTHER_PRODUCT_TYPED",
+  actionLabel: "Lead Interested in Custom Product",
+  metadata: { productName: otherReason },
+});
+
+setProductOtherSubmitted(true);
         }}
       />
     ) : (
       <ThreeActionButtons
-        onSubmit={closeAndExit}
+       onSubmit={async () => {
+
+  await logCallAction({
+    actionCode: "LEAD_FLOW_SUBMITTED",
+    actionLabel: "Lead Flow Submitted",
+  });
+
+  closeAndExit();
+}}
         onScheduleCall={() => setCalendarMode("CALL")}
         onScheduleVisit={() => setCalendarMode("VISIT")}
       />
@@ -405,19 +627,61 @@ onChange={(text) => {
                 options={[
                   {
                     icon: "time-outline",
-                    title: "No Response / Busy",
-                    action: () => setDidNotSpeakChoice("BUSY"),
+                 title: "No Response / Busy",
+action: async () => {
+
+  Alert.alert(
+    "Call Outcome",
+    "Lead did not answer the call.",
+    [{ text:"OK" }]
+  );
+
+  await logCallAction({
+    actionCode: "LEAD_BUSY",
+    actionLabel: "Lead Busy / No Response",
+  });
+
+  setDidNotSpeakChoice("BUSY");
+},
                   },
-                  {
-                    icon: "call-outline",
-                    title: "Not Reachable / Switched Off",
-                    action: () => setDidNotSpeakChoice("NOT_REACHABLE"),
-                  },
-                  {
-                    icon: "alert-circle-outline",
-                    title: "Invalid Number",
-                    action: () => setDidNotSpeakChoice("INVALID"),
-                  },
+                {
+  icon: "call-outline",
+  title: "Not Reachable / Switched Off",
+  action: async () => {
+
+    Alert.alert(
+      "Call Outcome",
+      "Lead phone is not reachable or switched off.",
+      [{ text:"OK" }]
+    );
+
+    await logCallAction({
+      actionCode: "LEAD_NOT_REACHABLE",
+      actionLabel: "Lead Not Reachable",
+    });
+
+    setDidNotSpeakChoice("NOT_REACHABLE");
+  },
+},
+               {
+  icon: "alert-circle-outline",
+  title: "Invalid Number",
+  action: async () => {
+
+    Alert.alert(
+      "Invalid Number",
+      "The lead number appears to be incorrect.",
+      [{ text:"OK" }]
+    );
+
+    await logCallAction({
+      actionCode: "LEAD_INVALID_NUMBER",
+      actionLabel: "Invalid Lead Number",
+    });
+
+    setDidNotSpeakChoice("INVALID");
+  },
+},
                   {
                     icon: "ellipsis-horizontal-outline",
                     title: "Others",
@@ -431,7 +695,15 @@ onChange={(text) => {
   didNotSpeakChoice
 ) && !calendarMode && (
   <ThreeActionButtons
-                onSubmit={closeAndExit}
+                onSubmit={async () => {
+
+  await logCallAction({
+    actionCode: "LEAD_FLOW_SUBMITTED",
+    actionLabel: "Lead Flow Submitted",
+  });
+
+  closeAndExit();
+}}
                 onScheduleCall={() => setCalendarMode("CALL")}
                 onScheduleVisit={() => setCalendarMode("VISIT")}
               />
@@ -446,12 +718,18 @@ onChange={(text) => {
       onChange={setOtherReason}
       placeholder="Enter reason..."
       buttonTitle="Proceed"
-      onSubmit={() => {
+     onSubmit={async () => {
         if (otherReason.trim().length < 3) {
           Alert.alert("Please enter proper reason");
           return;
         }
-        setDidNotSpeakChoice("OTHERS_FILLED");
+        await logCallAction({
+  actionCode: "LEAD_NOT_SPOKE_OTHER_REASON",
+  actionLabel: "Lead Not Spoken - Other Reason",
+  metadata: { reason: otherReason },
+});
+
+setDidNotSpeakChoice("OTHERS_FILLED");
       }}
     />
   </>
@@ -459,7 +737,15 @@ onChange={(text) => {
 
 {didNotSpeakChoice === "OTHERS_FILLED" && !calendarMode && (
   <ThreeActionButtons
-    onSubmit={closeAndExit}
+    onSubmit={async () => {
+
+  await logCallAction({
+    actionCode: "LEAD_FLOW_SUBMITTED",
+    actionLabel: "Lead Flow Submitted",
+  });
+
+  closeAndExit();
+}}
     onScheduleCall={() => setCalendarMode("CALL")}
     onScheduleVisit={() => setCalendarMode("VISIT")}
   />
@@ -517,8 +803,19 @@ onChange={(text) => {
 
           <TouchableOpacity
             style={styles.primaryBtn}
-            onPress={closeAndExit}
-          >
+onPress={async () => {
+  await logCallAction({
+    actionCode: "LEAD_SCHEDULED",
+    actionLabel: "Follow Up Scheduled",
+    metadata: {
+      date: selectedDate,
+      time: `${hour}:${minute} ${ampm}`,
+      type: calendarMode,
+    },
+  });
+
+  closeAndExit();
+}}          >
             <Text style={styles.primaryBtnText}>Confirm</Text>
           </TouchableOpacity>
         </>

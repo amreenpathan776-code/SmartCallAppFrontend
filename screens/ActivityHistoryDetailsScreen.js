@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import BASE_URL from "./config";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function ActivityHistoryDetailsScreen({ route, navigation }) {
   const { userId, loanAccountNumber, customerName } = route.params;
@@ -76,15 +77,35 @@ const scheduleTime =
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
+   <View style={styles.header}>
+  {/* BACK BUTTON */}
+  <TouchableOpacity onPress={() => navigation.goBack()}>
+    <Ionicons name="arrow-back" size={24} color="#fff" />
+  </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Activity Details</Text>
+  {/* TITLE */}
+  <Text style={styles.headerTitle}>Activity Details</Text>
 
-        <View style={{ width: 24 }} />
-      </View>
+  {/* HOME BUTTON */}
+  <TouchableOpacity
+    onPress={async () => {
+      const saved = await AsyncStorage.getItem("LOGGED_USER");
+      const user = saved ? JSON.parse(saved) : null;
+
+      if (!user) {
+        alert("Session expired. Please login again.");
+        return;
+      }
+
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Home", params: { user } }],
+      });
+    }}
+  >
+    <Ionicons name="home" size={22} color="#fff" />
+  </TouchableOpacity>
+</View>
 
       {/* Account Info */}
       <View style={styles.accountCard}>
