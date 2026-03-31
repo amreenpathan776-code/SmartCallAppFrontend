@@ -9,6 +9,7 @@ StyleSheet,
 
 import RNPickerSelect from "react-native-picker-select";
 import Ionicons from "react-native-vector-icons/Ionicons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SMAScreen = ({ navigation }) => {
 
@@ -131,8 +132,59 @@ mode
 
 };
 return (
-
 <View style={styles.container}>
+
+{/* HEADER */}
+<View style={styles.header}>
+
+<TouchableOpacity
+style={styles.headerIcon}
+onPress={() => {
+
+if(step === "FILTER"){
+setStep("CLUSTER");
+return;
+}
+
+if(step === "CLUSTER"){
+setStep("IRAC");
+return;
+}
+
+navigation.goBack();
+
+}}
+>
+<Ionicons name="arrow-back" size={24} color="#fff"/>
+</TouchableOpacity>
+
+<Text style={styles.headerTitle}>
+NPA & SMA
+</Text>
+
+<TouchableOpacity
+style={styles.headerIconRight}
+onPress={async () => {
+
+const saved = await AsyncStorage.getItem("LOGGED_USER");
+const user = saved ? JSON.parse(saved) : null;
+
+if(!user){
+alert("User session expired. Please login again.");
+return;
+}
+
+navigation.reset({
+  index: 0,
+  routes: [{ name: "Home", params: { user } }],
+});
+
+}}
+>
+<Ionicons name="home" size={24} color="#fff"/>
+</TouchableOpacity>
+
+</View>
 
 <View style={styles.centerBox}>
 
@@ -429,8 +481,9 @@ backgroundColor:"#F8FAFC"
 centerBox:{
 flex:1,
 justifyContent:"center",
+width:"85%",
 alignSelf:"center",
-width:"85%"
+marginTop:-90
 },
 
 title:{
@@ -499,5 +552,32 @@ paddingHorizontal:10,
 paddingVertical:6,
 marginBottom:20,
 justifyContent:"center"
+},
+header:{
+flexDirection:"row",
+alignItems:"center",
+justifyContent:"space-between",
+backgroundColor:"#0a3d62",
+paddingVertical:10,
+paddingHorizontal:10
+},
+
+headerTitle:{
+color:"#fff",
+fontSize:20,
+fontWeight:"bold",
+textAlign:"center",
+flex:1,
+paddingTop:20
+},
+
+headerIcon:{
+width:40,
+paddingTop:25
+},
+
+headerIconRight:{
+width:40,
+alignItems:"flex-end"
 },
 });

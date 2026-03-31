@@ -28,6 +28,7 @@ export default function RegisterScreen({ navigation }) {
 
   useFocusEffect(
   useCallback(() => {
+    console.log("📱 [REGISTER_SCREEN] Focused");
     setUserId("");
     setPassword("");
     setMpin("");
@@ -51,21 +52,23 @@ export default function RegisterScreen({ navigation }) {
   ];
 
   const handleRegister = async () => {
+    console.log("📝 [REGISTER] Register button clicked");
     try {
       const deviceId = await getPersistentDeviceId();
-
       if (!userId || !password || !mpin || !securityQ || !securityA) {
+        console.log("⚠️ [REGISTER] Validation failed - missing fields");
         Alert.alert("Error", "All fields are mandatory");
         return;
       }
 
       if (!/^\d{4}$/.test(mpin)) {
+        console.log("⚠️ [REGISTER] Invalid MPIN format");
         Alert.alert("Error", "MPIN must be exactly 4 digits");
         return;
       }
 
       setLoading(true);
-
+console.log("📡 [REGISTER] Calling register API", { userId: userId.trim() });
       const response = await fetch(`${BASE_URL}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,11 +85,12 @@ export default function RegisterScreen({ navigation }) {
       const data = await response.json();
 
       if (!response.ok) {
+        console.log("❌ [REGISTER] API failed", data?.message);
         Alert.alert("Registration Failed", data.message || "Registration failed");
         setLoading(false);
         return;
       }
-
+console.log("✅ [REGISTER] Registration success for user:", userId);
 Alert.alert("Success", "Registration completed successfully", [
   {
     text: "OK",
@@ -100,6 +104,7 @@ Alert.alert("Success", "Registration completed successfully", [
       setSecurityA("");
       setLoading(false);
     } catch (err) {
+      console.log("❌ [REGISTER] Network error:", err?.message || err);
       setLoading(false);
       Alert.alert("Error", "Unable to connect to server");
     }

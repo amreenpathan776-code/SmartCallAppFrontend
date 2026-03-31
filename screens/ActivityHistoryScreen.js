@@ -18,7 +18,7 @@ export default function ActivityHistoryScreen({ route, navigation }) {
   const { userId } = route.params;
 
   const today = new Date().toISOString().split("T")[0];
-const [historyType, setHistoryType] = useState("BOTH"); 
+const [historyType, setHistoryType] = useState("ALL");
 // BOTH | NPA | LEAD
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -72,26 +72,27 @@ body: JSON.stringify({
 
   // 🔥 APPLY FILTERS (Correct Till Date Logic)
 const applyFilters = () => {
-  if (!tempFromDate) return;
 
   const todayDate = new Date().toISOString().split("T")[0];
 
-  let finalFrom;
-  let finalTo;
+  let finalFrom = null;
+  let finalTo = null;
 
   if (mode === "ON_DATE") {
+    if (!tempFromDate) return;
     finalFrom = tempFromDate;
     finalTo = tempFromDate;
   }
 
   if (mode === "RANGE") {
-    if (!tempToDate) return;
+    if (!tempFromDate || !tempToDate) return;
     finalFrom = tempFromDate;
     finalTo = tempToDate;
   }
 
+  // ✅ FIXED: no start date needed
   if (mode === "TILL_TODAY") {
-    finalFrom = tempFromDate;
+    finalFrom = null;      // fetch from beginning
     finalTo = todayDate;
   }
 
@@ -129,25 +130,48 @@ const applyFilters = () => {
     >
       <View style={styles.card}>
         <View style={styles.nameRow}>
-          <Text style={styles.name}>{item.CustomerName}</Text>
-          <View
-            style={[
-              styles.statusBadge,
-              item.AccountStatus === "COMPLETED"
-                ? styles.statusCompleted
-                : item.AccountStatus === "IN PROCESS"
-                ? styles.statusInProcess
-                : styles.statusPending,
-            ]}
-          >
-            <Text style={styles.statusText}>{item.AccountStatus}</Text>
-          </View>
+  <View style={{flexDirection:"row",alignItems:"center",gap:6}}>
+    <Ionicons name="person-circle" size={18} color="#0a3d62" />
+    <Text style={styles.name}>{item.CustomerName}</Text>
+  </View>
+{(item.SourceType === "NPA" || item.SourceType === "LEAD") && (
+<View
+  style={[
+    styles.statusBadge,
+    item.AccountStatus === "COMPLETED"
+      ? styles.statusCompleted
+      : item.AccountStatus === "INPROCESS"
+      ? styles.statusInProcess
+      : styles.statusPending,
+  ]}
+>
+  <Text style={styles.statusText}>
+    {item.AccountStatus || "PENDING"}
+  </Text>
+</View>
+)}
         </View>
 
-    {item.SourceType !== "LEAD" && (
+{/* NPA */}
+{item.SourceType === "NPA" && (
   <>
     <Text style={styles.sub}>Loan: {item.LoanAccountNumber}</Text>
     <Text style={styles.sub}>DPD: {item.dpdQueue}</Text>
+  </>
+)}
+
+{/* LEAD */}
+{item.SourceType === "LEAD" && (
+  <>
+    <Text style={styles.sub}>Mobile No: {item.LoanAccountNumber}</Text>
+  </>
+)}
+
+{/* CO USE */}
+{item.SourceType === "CO_USE" && (
+  <>
+    <Text style={styles.sub}>Loan: {item.LoanAccountNumber}</Text>
+    <Text style={styles.sub}>NEW IRAC: {item.dpdQueue}</Text>
   </>
 )}
         <Text style={styles.action}>
@@ -177,7 +201,9 @@ const applyFilters = () => {
   <View style={styles.headerCenter}>
     <Text style={styles.headerTitle}>Activity History</Text>
     <Text style={styles.headerSub}>
-      {fromDate === toDate
+      {!fromDate
+  ? `Till ${formatDisplayDate(toDate)}`
+  : fromDate === toDate
         ? formatDisplayDate(fromDate)
         : `${formatDisplayDate(fromDate)} → ${formatDisplayDate(toDate)}`}
     </Text>
@@ -244,7 +270,7 @@ const applyFilters = () => {
       </View>
       {/* TYPE TABS */}
 <View style={styles.tabContainer}>
-  {["BOTH", "NPA", "LEAD"].map((item) => (
+  {["ALL","NPA","LEAD","CO_USE"].map((item) => (
     <TouchableOpacity
       key={item}
       style={[
@@ -262,7 +288,7 @@ const applyFilters = () => {
           historyType === item && styles.tabTextActive,
         ]}
       >
-        {item}
+        {item === "CO_USE" ? "CO USE" : item}
       </Text>
     </TouchableOpacity>
   ))}
@@ -359,19 +385,31 @@ const applyFilters = () => {
   </TouchableOpacity>
 
 </View>
-            <Calendar
-              markingType={"period"}
-              onDayPress={(day) => {
-                if (!tempFromDate) {
-                  setTempFromDate(day.dateString);
-                  setTempToDate(null);
-                } else if (!tempToDate) {
-                  setTempToDate(day.dateString);
-                } else {
-                  setTempFromDate(day.dateString);
-                  setTempToDate(null);
-                }
-              }}
+<Calendar
+  markingType={"period"}
+  onDayPress={(day) => {
+    if (!tempFromDate) {
+      setTempFromDate(day.dateString);
+      setTempToDate(null);
+    } else if (!tempToDate) {
+      setTempToDate(day.dateString);
+    } else {
+      setTempFromDate(day.dateString);
+      setTempToDate(null);
+    }
+  }}
+
+  // ✅ ADD THIS (arrows)
+  renderArrow={(direction) => (
+    <Ionicons
+      name={direction === "left" ? "chevron-back" : "chevron-forward"}
+      size={22}
+      color="#0a3d62"
+    />
+  )}
+
+  enableSwipeMonths={true}
+
 markedDates={
   mode === "ON_DATE"
     ? tempFromDate && {
@@ -383,26 +421,14 @@ markedDates={
         },
       }
 
-: mode === "TILL_TODAY" && tempFromDate
-? (() => {
-    const earlier =
-      tempFromDate < today ? tempFromDate : today;
-    const later =
-      tempFromDate < today ? today : tempFromDate;
-
-    return {
-      [earlier]: {
-        startingDay: true,
-        color: "#2f54eb",
-        textColor: "#fff",
-      },
-      [later]: {
-        endingDay: true,
-        color: "#2f54eb",
-        textColor: "#fff",
-      },
-    };
-  })()
+  : mode === "TILL_TODAY"
+? {
+    [today]: {
+      endingDay: true,  // ✅ left D shape
+      color: "#2f54eb",
+      textColor: "#fff",
+    },
+  }
 
     : {
         ...(tempFromDate && {
@@ -421,7 +447,7 @@ markedDates={
         }),
       }
 }
-            />
+/>
             <TouchableOpacity
               style={styles.confirmBtn}
               onPress={applyFilters}

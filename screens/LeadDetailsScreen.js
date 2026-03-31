@@ -762,15 +762,31 @@ setDidNotSpeakChoice("OTHERS_FILLED");
         </Text>
       </View>
 
-      <Calendar
-        onDayPress={(day) => setSelectedDate(day.dateString)}
-        markedDates={{
-          [selectedDate]: {
-            selected: true,
-            selectedColor: "#2563eb",
-          },
-        }}
-      />
+<Calendar
+  onDayPress={(day) => setSelectedDate(day.dateString)}
+  markedDates={{
+    [selectedDate]: {
+      selected: true,
+      selectedColor: "#2563eb",
+    },
+  }}
+
+  // block past dates
+  minDate={new Date().toISOString().split("T")[0]}
+  disableAllTouchEventsForDisabledDays={true}
+
+  // enable swipe
+  enableSwipeMonths={true}
+
+  // show arrows
+  renderArrow={(direction) => (
+    <Ionicons
+      name={direction === "left" ? "chevron-back" : "chevron-forward"}
+      size={22}
+      color="#1e4fa1"
+    />
+  )}
+/>
 
       {selectedDate && (
         <>

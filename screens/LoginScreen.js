@@ -22,28 +22,30 @@ export default function LoginScreen({ navigation }) {
   const inputRef = useRef(null);
 
   const handleLogin = async (enteredMpin = mpin) => {
+    console.log("🔐 [LOGIN] Attempt started");
     try {
       const deviceId = await getPersistentDeviceId();
 
       if (!enteredMpin){
+        console.log("⚠️ [LOGIN] MPIN empty");
         Alert.alert("Error", "Please enter MPIN");
         return;
       }
 
     if (enteredMpin.length !== 4)   {
+      console.log("⚠️ [LOGIN] Invalid MPIN length");
         Alert.alert("Error", "MPIN must be exactly 4 digits");
         return;
       }
 
       if (!deviceId) {
+        console.log("⚠️ [LOGIN] Device ID missing");
         Alert.alert("Error", "Device ID not found");
         return;
       }
 
       setLoading(true);
-
-      console.log("✅ LOGIN sending:", { mpin, deviceId });
-
+console.log("📡 [LOGIN] Calling login API");
       const response = await fetch(`${BASE_URL}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -51,11 +53,11 @@ export default function LoginScreen({ navigation }) {
       });
 
 const data = await response.json();
-console.log("📱 LOGIN RESPONSE:", data);
+console.log("📥 [LOGIN] Response received", { success: response.ok });
 
 // ⭐⭐⭐ STRICT CHECK ⭐⭐⭐
 if (response.ok && data.user) {
-
+console.log("✅ [LOGIN] Login success");
   await AsyncStorage.setItem("LOGGED_USER", JSON.stringify(data.user));
 
   Alert.alert("Success", "Login successful", [
@@ -71,15 +73,17 @@ if (response.ok && data.user) {
   ]);
 
 } else {
+  console.log("❌ [LOGIN] Login failed", data?.message);
   Alert.alert("Login Failed", data.message || "Invalid login");
 }
 
 setLoading(false);
 
     } catch (error) {
-      setLoading(false);
-      Alert.alert("Error", "Unable to connect to server");
-    }
+  console.log("❌ [LOGIN] Network error", error?.message);
+  setLoading(false);
+  Alert.alert("Error", "Unable to connect to server");
+}
   };
 
 return (

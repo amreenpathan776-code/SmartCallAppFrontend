@@ -482,13 +482,15 @@ const logVisitAction = async ({
   sessionIdOverride = null
 }) => {
 
-let sessionIdToUse =
-  sessionIdOverride ||
-  visitSessionId ||
-  await AsyncStorage.getItem(ACTIVE_VISIT_KEY);
+  let sessionIdToUse = sessionIdOverride || visitSessionId;
 
-// silently skip if still missing (no log, no error)
-if (!sessionIdToUse) return;
+  // ⭐ RECOVER SESSION IF STATE LOST
+  if (!sessionIdToUse) {
+    sessionIdToUse = await AsyncStorage.getItem(ACTIVE_VISIT_KEY);
+  }
+if (!sessionIdToUse) {
+  console.log("⚠ Session missing — backend will recover");
+}
 
   try {
     const user = await getLoggedUser();
@@ -503,7 +505,7 @@ if (!sessionIdToUse) return;
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-       sessionId: sessionIdToUse,
+        sessionId: Number(sessionIdToUse),
         actionCode,
         actionLabel,
         reasonCode,
@@ -521,18 +523,14 @@ if (!sessionIdToUse) return;
   }
 };
 const endVisitSession = async () => {
- let sessionIdToUse =
-  visitSessionId ||
-  await AsyncStorage.getItem(ACTIVE_VISIT_KEY);
-
-if (!sessionIdToUse) return;
+  if (!visitSessionId) return;
 
   try {
     await fetch(`${BASE_URL}/api/activity/session/end`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-       sessionId: sessionIdToUse
+        sessionId: visitSessionId
       }),
     });
 
@@ -701,24 +699,13 @@ const [account, setAccount] = useState(null);
 const [loading, setLoading] = useState(true);
 
 const [altUnlocked, setAltUnlocked] = useState(false);
-
-const [customerAddress, setCustomerAddress] = useState("");
-const [addressEditable, setAddressEditable] = useState(false);
-const [addressSource, setAddressSource] = useState("DB");
-const [addressConfirmed, setAddressConfirmed] = useState(false);
-const [altEditable, setAltEditable] = useState(true);
-
+const [altEditable, setAltEditable] = useState(false);
 const [altNumber, setAltNumber] = useState("");
 
 const [showCallModal, setShowCallModal] = useState(false);
 const [callStage, setCallStage] = useState("IDLE");
 const [spokeChoice, setSpokeChoice] = useState(null);
-const [addressPromptShown, setAddressPromptShown] = useState(false);
-useEffect(() => {
-  if (loanAccountNumber) {
-    fetchAccountDetails();
-  }
-}, [loanAccountNumber]);
+
 const [readyPayChoice, setReadyPayChoice] = useState(null);
 const [selectedDate, setSelectedDate] = useState("");
 const [hour, setHour] = useState("10");
@@ -791,12 +778,6 @@ const [stopAddress, setStopAddress] = useState("");
 const [currentVisitSNo, setCurrentVisitSNo] = useState(null);
 const [startLocation, setStartLocation] = useState(null);
 const [startAddress, setStartAddress] = useState("");
-
-const [alternateList, setAlternateList] = useState([]);
-const [showAlternates, setShowAlternates] = useState(false);
-
-const [callNumbers, setCallNumbers] = useState([]);
-
 // ⭐ UNIVERSAL EXIT AFTER SUBMIT
 const exitToDPDList = async () => {
   try {
@@ -816,91 +797,28 @@ const exitToDPDList = async () => {
     console.log("Exit error", e);
   }
 };
-const fetchAlternateNumbers = async () => {
-  try {
-    const res = await fetch(
-      `${BASE_URL}/api/customer-numbers?accountNumber=${loanAccountNumber}`
-    );
 
-    const data = await res.json();
-
-    if (Array.isArray(data)) {
-      const numbers = data
-        .map(x => x.AlternateNumber)
-        .filter(Boolean);
-
-      setAlternateList(numbers);
-
-      // last added number in textbox
-      if (numbers.length > 0) {
-        setAltNumber(numbers[numbers.length - 1]);
-      }
-    }
-  } catch (e) {
-    console.log("alternate fetch error", e);
-  }
-};
   // ✅ VISIT START: capture location first then open visit modal
 // 🚀 MASTER START VISIT (TODAY + UNSCHEDULED USE SAME)
 const startVisitFlow = async () => {
   try {
-
-    // ❌ No address at all
-    if (!customerAddress || customerAddress.trim().length < 5) {
-      Alert.alert(
-        "Address Missing",
-        "Customer address not available. Please call customer and enter address."
-      );
-      setAddressEditable(true);
-      return;
-    }
-
-    // ⭐ Confirm address before starting
-    if (!addressConfirmed) {
-      Alert.alert(
-        "Confirm Address",
-        `Customer Address:\n\n${customerAddress}\n\nIs this correct?`,
-        [
-          {
-            text: "No",
-            onPress: () => {
-              setAddressEditable(true);
-            }
-          },
-{
-  text: "Yes",
-  onPress: async () => {
-
-    setAddressConfirmed(true);
-
-    // ✅ ALWAYS SAVE (remove condition)
-    const saved = await saveManualAddress();
-    if (!saved) return;
-
-  }
-
-}
-        ]
-      );
-      return;
-    }
-
-    // 🔽 YOUR EXISTING CODE (UNCHANGED BELOW)
-    setIsVisitFullScreen(false); 
+setIsVisitFullScreen(false); 
     setVisitStage("IDLE");
     setShowVisitModal(true);
 
+    // ✅ 2) Start VISIT session first (fast operation)
     const sessionId = await startVisitSession();
     if (!sessionId) return;
+setVisitSessionId(sessionId);
 
-    setVisitSessionId(sessionId);
+// ⭐ save active visit globally
+await AsyncStorage.setItem(ACTIVE_VISIT_KEY, sessionId);
+await AsyncStorage.setItem(VISIT_START_TIME_KEY, Date.now().toString());
 
-    await AsyncStorage.setItem(ACTIVE_VISIT_KEY, sessionId);
-    await AsyncStorage.setItem(VISIT_START_TIME_KEY, Date.now().toString());
+const user = await getLoggedUser();
+await AsyncStorage.setItem(ACTIVE_VISIT_USER_KEY, user.UserId.toString());
 
-    const user = await getLoggedUser();
-    await AsyncStorage.setItem(ACTIVE_VISIT_USER_KEY, user.UserId.toString());
-
+    // ✅ 3) Capture start location
     const coords = await handleCaptureLocation();
     if (!coords) return;
 
@@ -909,19 +827,19 @@ const startVisitFlow = async () => {
       longitude: coords.longitude,
       accuracy: coords.accuracy,
     });
-
     setStartAddress(coords.address);
 
-    const sno = await saveStartLocationToDBAndReturnSNo();
+    // ✅ 4) Save to DB
+    const sno = await saveStartLocationToDBAndReturnSNo(coords);
     if (!sno) return;
 
     setCurrentVisitSNo(sno);
-    await AsyncStorage.setItem(ACTIVE_VISIT_SNO_KEY, sno.toString());
-
+await AsyncStorage.setItem(ACTIVE_VISIT_SNO_KEY, sno.toString());
+    // ✅ 5) Log
 await logVisitAction({
   actionCode: "VISIT_STARTED",
   actionLabel: "Visit Started",
-  sessionIdOverride: sessionId.toString(),
+  sessionIdOverride: sessionId,
   metadata: {
     sno,
     startLat: coords.latitude,
@@ -936,7 +854,7 @@ await logVisitAction({
     Alert.alert("Error", "Unable to start visit");
   }
 };
-const saveStartLocationToDBAndReturnSNo = async () => {
+const saveStartLocationToDBAndReturnSNo = async (coords) => {
   try {
     const userStr = await AsyncStorage.getItem("LOGGED_USER");
     const user = userStr ? JSON.parse(userStr) : null;
@@ -947,30 +865,34 @@ const saveStartLocationToDBAndReturnSNo = async () => {
     }
 
     // ⭐ STEP 1 — Build customer full address
-  // ⭐ STEP 1 — Build customer full address
-const address = customerAddress || "";
+    const customerAddress =
+      `${account?.village || ""}, ${account?.gp || ""}, ${account?.pincode || ""}`;
 
-// ⭐ STEP 2 — Convert customer address → coordinates
-let customerCoords = null;
-try {
-  customerCoords = await getCoordsFromAddressGoogle(address);
-} catch (e) {
-  console.log("Customer geocoding failed:", e);
-}
+    // ⭐ STEP 2 — Convert customer address → coordinates
+    let customerCoords = null;
+    try {
+      customerCoords = await getCoordsFromAddressGoogle(customerAddress);
+    } catch (e) {
+      console.log("Customer geocoding failed:", e);
+    }
 
-const payload = {
-  userId: user.UserId,
-  userName: user.UserName,
-  accountNo: account?.loanAccountNumber,
-  customerName: account?.firstname,
+    const payload = {
+      userId: user.UserId,
+      userName: user.UserName,
+      accountNo: account?.loanAccountNumber,
+      customerName: account?.firstname,
 
-  // ❌ DO NOT SEND START LOCATION
-  // backend will take branch GPS automatically
+      // 🔴 START LOCATION (Officer)
+      startLat: coords.latitude,
+      startLng: coords.longitude,
+      startAddress: coords.address,
 
+      // 🔴 CUSTOMER LOCATION (Borrower)
   customerLat: customerCoords?.latitude,
-  customerLng: customerCoords?.longitude,
-  customerAddress: address,
-};
+customerLng: customerCoords?.longitude,
+      customerAddress: customerAddress,
+    };
+
     console.log("📤 Sending Visit Start Payload:", payload);
 
     const res = await fetch(`${BASE_URL}/api/field-visit/start`, {
@@ -1203,30 +1125,13 @@ const saveAlternateNumber = async () => {
     Alert.alert("Invalid", "Alternate number must be 10 digits");
     return false;
   }
-
-  // ⭐ prevent duplicates
-  if (alternateList.includes(altNumber)) {
-    Alert.alert("Duplicate", "This number already exists");
-    return false;
-  }
-
-  // ⭐ limit count
-  if (alternateList.length >= 5) {
-    Alert.alert("Limit Reached", "Maximum 5 alternate numbers allowed");
-    return false;
-  }
-
   try {
-    const userStr = await AsyncStorage.getItem("LOGGED_USER");
-    const user = userStr ? JSON.parse(userStr) : null;
-
     const res = await fetch(`${BASE_URL}/api/account/save-alternate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         loanAccountNumber: account.loanAccountNumber,
         alternateNumber: altNumber,
-        addedBy: user?.UserName
       }),
     });
 
@@ -1236,80 +1141,12 @@ const saveAlternateNumber = async () => {
       Alert.alert("Error", data.message || "Unable to save");
       return false;
     }
-
-    setAltEditable(false);
-    setAltUnlocked(true);
-
-    // refresh list
-    await fetchAlternateNumbers();
-
+// ✅ lock after save
+setAltEditable(false);
+setAltUnlocked(true);   // 👈 ADD THIS LINE
     return true;
-
   } catch (e) {
     Alert.alert("Error", "Server error");
-    return false;
-  }
-};
-const deleteAlternateNumber = async (number) => {
-  try {
-
-    const userStr = await AsyncStorage.getItem("LOGGED_USER");
-    const user = userStr ? JSON.parse(userStr) : null;
-
-    const res = await fetch(`${BASE_URL}/api/account/delete-alternate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        loanAccountNumber: account.loanAccountNumber,
-        alternateNumber: number,
-        deletedBy: user?.UserName
-      }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      Alert.alert("Error", data.message || "Delete failed");
-      return;
-    }
-
-    await fetchAlternateNumbers();
-
-  } catch (e) {
-    Alert.alert("Error", "Server error");
-  }
-};
-const saveManualAddress = async () => {
-  try {
-    const user = await getLoggedUser();
-
-    const res = await fetch(`${BASE_URL}/api/account/save-manual-address`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        loanAccountNumber: account.loanAccountNumber,
-        address: customerAddress,
-        userId: user.UserId
-      }),
-    });
-
-    if (!res.ok) {
-      Alert.alert("Error saving address");
-      return false;
-    }
-
-    setAddressEditable(false);
-    setAddressConfirmed(true);
-
-    // ⭐ ADD THIS LINE
-    setAddressSource("MANUAL");
-
-    return true;
-
-  } catch (e) {
-    Alert.alert("Error", "Unable to save address");
     return false;
   }
 };
@@ -1325,7 +1162,9 @@ useEffect(() => {
   }
 }, [visitStage, visitMeetStatus, visitAction, paymentMode]);
 
-
+  useEffect(() => {
+    fetchAccountDetails();
+  }, []);
 
 useEffect(() => {
   if (!account) return;
@@ -1345,7 +1184,6 @@ if (openFlow === "VISIT_START") {
 
 }, [account, openFlow]);
 
-{/*
 useEffect(() => {
 
   const restoreVisit = async () => {
@@ -1375,7 +1213,6 @@ useEffect(() => {
   restoreVisit();
 
 }, []);
-*/}
 useEffect(() => {
 
   const interval = setInterval(async () => {
@@ -1422,27 +1259,16 @@ useEffect(() => {
 
       const data = await res.json();
       setAccount(data.account);
-      // ✅ ADDRESS PREFILL
-if (data.account?.FullAddress) {
-  setCustomerAddress(data.account.FullAddress);
-  setAddressSource(data.account.AddressSource);
-  setAddressEditable(false);
-  setAddressConfirmed(false);
-} else {
-  setCustomerAddress("");
-  setAddressEditable(true);
-  setAddressConfirmed(false);
-}
       // ✅ PREFILL ALTERNATE NUMBER IF EXISTS
 if (data.account?.AlternateNumber) {
   setAltNumber(data.account.AlternateNumber);
-  setAltEditable(true);   // 👈 allow editing
+  setAltUnlocked(true);
+  setAltEditable(false); // lock if already saved
 } else {
   setAltNumber("");
-  setAltEditable(true);   // 👈 allow typing
+  setAltUnlocked(true);   // allow entry
+  setAltEditable(true);
 }
-setAddressPromptShown(false);
-fetchAlternateNumbers();
       setLoading(false);
     } catch (err) {
       console.error(err);
@@ -1475,12 +1301,12 @@ const address = await getAddressFromCoordsGoogle(
 );
 
     setCapturedAddress(address);
-{/*}
+
     Alert.alert(
       "✅ Location Captured",
       `Lat: ${coords.latitude}\nLng: ${coords.longitude}\nAccuracy: ${coords.accuracy}m\n\n📍 ${address}`
     );
-*/}
+
     return { ...coords, address };
   } catch (err) {
     Alert.alert("❌ Location Error", err.message);
@@ -1584,14 +1410,19 @@ const handleCallNow = async () => {
   try {
     if (!account) return;
 
+    // ✅ If alternate is editable and filled → save first
+if (altNumber && altNumber.length === 10) {
+  const saved = await saveAlternateNumber();
+  if (!saved) return;
+}
 
-const numbers = [
-  account.mobileNumber,
-  altNumber,
-  ...alternateList
-].filter((n, index, self) =>
-  n && String(n).length === 10 && self.indexOf(n) === index
-);
+    // ✅ collect numbers AFTER save
+    const primary = String(account.mobileNumber || "").trim();
+    const alt = String(altNumber || "").trim();
+
+    const numbers = [primary, alt].filter(
+      (n) => n && n.length === 10
+    );
 
     if (numbers.length === 0) {
       Alert.alert("No Number", "No valid phone number available");
@@ -1620,8 +1451,7 @@ const numbers = [
     }
 
     // ✅ Multiple numbers
-    setCallNumbers(numbers);
-setShowCallModal(true);
+    setShowCallModal(true);
 
   } catch (e) {
     console.log("handleCallNow error:", e);
@@ -1647,7 +1477,6 @@ setShowCallModal(true);
 
   return (
     <View style={styles.container}>
-{/*
 {visitSessionId && (
   <View
     style={{
@@ -1657,7 +1486,7 @@ setShowCallModal(true);
     }}
   >
 
-    //Continue Visit 
+    {/* Continue Visit */}
     <TouchableOpacity
       onPress={async () => {
 
@@ -1683,7 +1512,7 @@ setShowCallModal(true);
     </TouchableOpacity>
 
 
-// NEW RESET VISIT BUTTON 
+{/* NEW RESET VISIT BUTTON */}
 <TouchableOpacity
   style={{
     backgroundColor: "#ef4444",
@@ -1701,7 +1530,6 @@ setShowCallModal(true);
   </View>
 )}
   
-*/}
 
       {/* ===== HEADER ===== */}
    <View style={styles.header}>
@@ -1760,116 +1588,46 @@ setShowCallModal(true);
           <DetailRow label="Mobile No." value={account.mobileNumber} />
 
           {/* ALTERNATE NUMBER */}
-<View style={styles.row}>
-  <Text style={styles.label}>Alternate Number</Text>
+          <View style={styles.row}>
+            <Text style={styles.label}>Alternate Number</Text>
 
-  <View style={{ flex: 1 }}>
+            {!altUnlocked ? (
+              <TouchableOpacity
+                onPress={() => {
+                  setAltUnlocked(true);
+                  setAltEditable(true);
+                }}
+              >
+                <Ionicons name="lock-closed" size={20} color="#555" />
+              </TouchableOpacity>
+            ) : (
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <TextInput
+                  style={styles.altInput}
+                  placeholder="Enter number"
+                  keyboardType="phone-pad"
+                  maxLength={10}
+                  editable={altEditable}
+                  value={altNumber}
+onChangeText={(text) => {
+  const cleaned = text.replace(/[^0-9]/g, "");
+  setAltNumber(cleaned);
+}}                />
 
-    {/* INPUT ROW */}
-    <View style={{ flexDirection: "row", alignItems: "center" }}>
-
-      <TextInput
-        style={[styles.altInput, { flex: 1 }]}
-        placeholder="Enter number"
-        keyboardType="phone-pad"
-        maxLength={10}
-        editable={altEditable}
-        value={altNumber}
-        onChangeText={(text) => {
-          const cleaned = text.replace(/[^0-9]/g, "");
-          setAltNumber(cleaned);
-        }}
-      />
-
-      {/* 👁️ EYE ICON */}
-      <TouchableOpacity
-        onPress={() => setShowAlternates(!showAlternates)}
-        style={{ marginLeft: 6 }}
-      >
-        <Ionicons
-          name={showAlternates ? "eye-off-outline" : "eye-outline"}
-          size={20}
-          color="#555"
-        />
-      </TouchableOpacity>
-
-      {/* 🔒 LOCK ICON */}
-    <TouchableOpacity
-  onPress={async () => {
-    if (altEditable && altNumber.length === 10) {
-      await saveAlternateNumber();   // ⭐ SAVE IMMEDIATELY
-    }
-    setAltEditable(!altEditable);
-  }}
-  style={{ marginLeft: 6 }}
->
-        <Ionicons
-          name={altEditable ? "lock-open" : "lock-closed"}
-          size={20}
-          color={altEditable ? "#27ae60" : "#555"}
-        />
-      </TouchableOpacity>
-
-    </View>
-
-    {/* MULTIPLE NUMBERS LIST */}
-    {showAlternates && alternateList.length > 0 && (
-      <View style={{ marginTop: 6 }}>
-{alternateList.map((num, index) => (
-  <View
-    key={index}
-    style={[styles.altListItem, { justifyContent: "space-between" }]}
-  >
-    {/* LEFT SIDE (CALL + NUMBER) */}
-    <TouchableOpacity
-      style={{ flexDirection: "row", alignItems: "center" }}
-      onPress={() => setAltNumber(num)}
-    >
-      <Ionicons name="call-outline" size={16} color="#2563eb" />
-      <Text style={{ marginLeft: 6 }}>{num}</Text>
-    </TouchableOpacity>
-
-    {/* RIGHT SIDE (DELETE ICON) */}
-    <TouchableOpacity
-      onPress={() => deleteAlternateNumber(num)}
-    >
-      <Ionicons name="trash-outline" size={18} color="red" />
-    </TouchableOpacity>
-  </View>
-))}
-      </View>
-    )}
-
-  </View>
-</View>
-           {/* ========MANUAL ADDRESS=================*/}
-<View style={styles.row}>
-  <Text style={styles.label}>Customer Address</Text>
-
-  <View style={{ flex: 1, marginRight: 8 }}>
-    <TextInput
-      style={[styles.altInput, { flexWrap: "wrap" }]}
-      placeholder="Enter address"
-      multiline
-      editable={addressEditable}
-      value={customerAddress}
-      onChangeText={setCustomerAddress}
-    />
-  </View>
-
-  <TouchableOpacity
-    onPress={() => setAddressEditable(!addressEditable)}
-  >
-    <Ionicons
-      name={addressEditable ? "lock-open" : "lock-closed"}
-      size={20}
-      color={addressEditable ? "#27ae60" : "#555"}
-    />
-  </TouchableOpacity>
-</View>
+                <TouchableOpacity
+                  onPress={() => setAltEditable(!altEditable)}
+                  style={{ marginLeft: 8 }}
+                >
+                  <Ionicons
+                    name={altEditable ? "lock-open" : "lock-closed"}
+                    size={20}
+                    color={altEditable ? "#27ae60" : "#555"}
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         </View>
-
-
 
         {/* ===== LOAN DETAILS ===== */}
         <View style={styles.card}>
@@ -1898,8 +1656,8 @@ setShowCallModal(true);
     <TouchableOpacity
       style={styles.visitBtn}
       onPress={async () => {
-{/*
-          const activeVisit = await AsyncStorage.getItem(ACTIVE_VISIT_KEY);
+
+        const activeVisit = await AsyncStorage.getItem(ACTIVE_VISIT_KEY);
         const visitUser = await AsyncStorage.getItem(ACTIVE_VISIT_USER_KEY);
 
         const user = await getLoggedUser();
@@ -1911,7 +1669,6 @@ setShowCallModal(true);
           );
           return;
         }
-        */}
 
         startVisitFlow();
       }}
@@ -2774,40 +2531,18 @@ onPress={() => {
 
     {/* Calendar */}
     {showFoDatePicker && (
-<Calendar
-  onDayPress={(day) => {
-    setFoVisitDate(day.dateString);
-    setShowFoDatePicker(false);
-  }}
-  markedDates={{
-    [foVisitDate]: {
-      selected: true,
-      selectedColor: "#2563eb",
-    },
-  }}
-
-  minDate={new Date().toISOString().split("T")[0]}
-  disableAllTouchEventsForDisabledDays={true}
-  enableSwipeMonths={true}
-
-  renderArrow={(direction) => (
-    <Ionicons
-      name={direction === "left" ? "chevron-back" : "chevron-forward"}
-      size={22}
-      color="#1e4fa1"
-    />
-  )}
-    theme={{
-    todayTextColor: "#2563eb",
-    arrowColor: "#1e4fa1",
-    selectedDayBackgroundColor: "#2563eb",
-    selectedDayTextColor: "#ffffff",
-    monthTextColor: "#1e293b",
-    textMonthFontWeight: "700",
-    textDayFontWeight: "600",
-    textDayHeaderFontWeight: "600",
-  }}
-/>
+      <Calendar
+        onDayPress={(day) => {
+          setFoVisitDate(day.dateString);
+          setShowFoDatePicker(false);
+        }}
+        markedDates={{
+          [foVisitDate]: {
+            selected: true,
+            selectedColor: "#2563eb",
+          },
+        }}
+      />
     )}
 
     {/* 👤 FO Name */}
@@ -3758,38 +3493,15 @@ onPress={() => {
   <View style={styles.scheduleCard}>
 
     {/* 📅 Calendar */}
-<Calendar
-  onDayPress={(day) => setSelectedDate(day.dateString)}
-  markedDates={{
-    [selectedDate]: {
-      selected: true,
-      selectedColor: "#1e88e5",
-    },
-  }}
-
-  minDate={new Date().toISOString().split("T")[0]}
-  disableAllTouchEventsForDisabledDays={true}
-  enableSwipeMonths={true}
-
-  renderArrow={(direction) => (
-    <Ionicons
-      name={direction === "left" ? "chevron-back" : "chevron-forward"}
-      size={22}
-      color="#1e4fa1"
+    <Calendar
+      onDayPress={(day) => setSelectedDate(day.dateString)}
+      markedDates={{
+        [selectedDate]: {
+          selected: true,
+          selectedColor: "#1e88e5",
+        },
+      }}
     />
-  )}
-
-  theme={{
-    todayTextColor: "#2563eb",
-    arrowColor: "#1e4fa1",
-    selectedDayBackgroundColor: "#1e88e5",
-    selectedDayTextColor: "#ffffff",
-    monthTextColor: "#1e293b",
-    textMonthFontWeight: "700",
-    textDayFontWeight: "600",
-    textDayHeaderFontWeight: "600",
-  }}
-/>
 
     {/* ⏰ Time Picker */}
     <View style={styles.timeRow}>
@@ -5243,38 +4955,15 @@ onPress={async () => {
   (visitAction === "VISIT_LATER" || visitAction === "CALL_LATER") &&
   calendarMode && (
     <View style={styles.scheduleCard}>
-<Calendar
-  onDayPress={(day) => setSelectedDate(day.dateString)}
-  markedDates={{
-    [selectedDate]: {
-      selected: true,
-      selectedColor: "#1e88e5",
-    },
-  }}
-
-  minDate={new Date().toISOString().split("T")[0]}
-  disableAllTouchEventsForDisabledDays={true}
-  enableSwipeMonths={true}
-
-  renderArrow={(direction) => (
-    <Ionicons
-      name={direction === "left" ? "chevron-back" : "chevron-forward"}
-      size={22}
-      color="#1e4fa1"
-    />
-  )}
-
-  theme={{
-    todayTextColor: "#2563eb",
-    arrowColor: "#1e4fa1",
-    selectedDayBackgroundColor: "#1e88e5",
-    selectedDayTextColor: "#ffffff",
-    monthTextColor: "#1e293b",
-    textMonthFontWeight: "700",
-    textDayFontWeight: "600",
-    textDayHeaderFontWeight: "600",
-  }}
-/>
+      <Calendar
+        onDayPress={(day) => setSelectedDate(day.dateString)}
+        markedDates={{
+          [selectedDate]: {
+            selected: true,
+            selectedColor: "#1e88e5",
+          },
+        }}
+      />
 
       <View style={styles.timeRow}>
         <TextInput
@@ -5607,29 +5296,85 @@ setShowCloseAccountModal(true);
 
             <Text style={styles.callTitle}>Call Customer</Text>
             <Text style={styles.callSub}>Select a number</Text>
-{callNumbers.map((num, index) => (
-  <TouchableOpacity
-    key={index}
-    style={styles.callOption}
-    onPress={async () => {
-      const phone = String(num).trim();
 
-      setOpenCallModalAfterDial(true);
-      await logDialedNumber(phone);
+            <TouchableOpacity
+              style={styles.callOption}
+onPress={async () => {
+  try {
+    const phone = String(account?.mobileNumber || "").trim();
 
-      Linking.openURL(`tel:${phone}`);
-      setShowCallModal(false);
-    }}
-  >
-    <Ionicons name="call" size={18} color="#1e4fa1" />
-    <View style={{ marginLeft: 10 }}>
-      <Text style={styles.callLabel}>
-        {index === 0 ? "Primary" : `Alternate ${index}`}
-      </Text>
-      <Text style={styles.callNumber}>{num}</Text>
-    </View>
-  </TouchableOpacity>
-))}
+    if (!phone) {
+      Alert.alert("No Number", "Primary number not available");
+      return;
+    }
+
+    // ✅ very important: set flag BEFORE opening dial pad
+    setOpenCallModalAfterDial(true);
+
+    // ✅ log dialed
+    await logDialedNumber(phone);
+
+    // ✅ open dial pad
+    Linking.openURL(`tel:${phone}`);
+
+    // ✅ close selection modal only
+    setShowCallModal(false);
+
+  } catch (e) {
+    console.log("Primary dial error:", e);
+    Alert.alert("Error", "Unable to dial");
+  }
+}}
+
+
+
+            >
+              <Ionicons name="call" size={18} color="#1e4fa1" />
+              <View style={{ marginLeft: 10 }}>
+                <Text style={styles.callLabel}>Primary</Text>
+                <Text style={styles.callNumber}>{account.mobileNumber}</Text>
+              </View>
+            </TouchableOpacity>
+
+            {altNumber ? (
+              <TouchableOpacity
+                style={styles.callOption}
+onPress={async () => {
+  try {
+    const phone = String(altNumber || "").trim();
+
+    if (!phone) {
+      Alert.alert("No Number", "Alternate number not available");
+      return;
+    }
+
+    // ✅ set flag so modal opens after coming back
+    setOpenCallModalAfterDial(true);
+
+    // ✅ log dialed
+    await logDialedNumber(phone);
+
+    // ✅ open dial pad
+    Linking.openURL(`tel:${phone}`);
+
+    // ✅ close selection modal
+    setShowCallModal(false);
+
+  } catch (e) {
+    console.log("Alternate dial error:", e);
+    Alert.alert("Error", "Unable to dial");
+  }
+}}
+
+
+              >
+                <Ionicons name="call" size={18} color="#27ae60" />
+                <View style={{ marginLeft: 10 }}>
+                  <Text style={styles.callLabel}>Alternate</Text>
+                  <Text style={styles.callNumber}>{altNumber}</Text>
+                </View>
+              </TouchableOpacity>
+            ) : null}
 
             <TouchableOpacity
               style={styles.cancelBtn}
@@ -6816,18 +6561,5 @@ fullScreenVisitDialog: {
   height: "100%",
   borderRadius: 0,
 },
-altInput: {
-  borderBottomWidth: 1,
-  borderColor: "#ccc",
-  paddingVertical: 4,
-  fontSize: 12,
-  flex: 1,
-},
-altListItem: {
-  flexDirection: "row",
-  alignItems: "center",
-  paddingVertical: 6,
-  borderBottomWidth: 0.5,
-  borderColor: "#ddd"
-},
+
 });

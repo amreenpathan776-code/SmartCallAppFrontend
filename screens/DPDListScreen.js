@@ -23,14 +23,37 @@ export default function DPDListScreen({ route, navigation }) {
   const [searchText, setSearchText] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-const [activeTab, setActiveTab] = useState("ALL");
+  const [activeTab, setActiveTab] = useState("ALL");
+
+  const [scheduledMode, setScheduledMode] = useState(false);
+  const [scheduledData, setScheduledData] = useState([]);
+  const [selectedAccounts, setSelectedAccounts] = useState([]);
+const [scheduledTitle, setScheduledTitle] = useState("");
 
   useFocusEffect(
     useCallback(() => {
       fetchDPDData();
     }, [dpdQueue, userId])
   );
+useEffect(() => {
+  const unsubscribe = navigation.addListener("beforeRemove", (e) => {
 
+    // allow navigation reset (HOME) to work normally
+    if (
+      e.data.action.type === "RESET" ||
+      e.data.action.type === "REPLACE"
+    ) {
+      return;
+    }
+
+    if (!scheduledMode) return;
+
+    e.preventDefault();
+    setScheduledMode(false);
+  });
+
+  return unsubscribe;
+}, [navigation, scheduledMode]);
   const fetchDPDData = async () => {
     try {
       const response = await fetch(`${BASE_URL}/api/dpd-list`, {
@@ -42,27 +65,80 @@ const [activeTab, setActiveTab] = useState("ALL");
       const result = await response.json();
       const records = result.records || [];
 
-const today = new Date().toISOString().split("T")[0];
+      const today = new Date().toISOString().split("T")[0];
 
-const filteredRecords = records.filter((item) => {
-  if (item.AccountStatus !== "COMPLETED") return true;
+      const filteredRecords = records.filter((item) => {
+        if (item.AccountStatus !== "COMPLETED") return true;
 
-  if (!item.CompletedAt) return false;
+        if (!item.CompletedAt) return false;
 
-  const completedDate = new Date(item.CompletedAt)
-    .toISOString()
-    .split("T")[0];
+        const completedDate = new Date(item.CompletedAt)
+          .toISOString()
+          .split("T")[0];
 
-  return completedDate === today;
-});
+        return completedDate === today;
+      });
 
-setData(filteredRecords);
-setFilteredData(filteredRecords);
+      setData(filteredRecords);
+      setFilteredData(filteredRecords);
       setLoading(false);
     } catch (error) {
       console.error("DPD Fetch Error:", error);
       setLoading(false);
     }
+  };
+
+const fetchScheduledAccounts = async (type) => {
+  try {
+    const response = await fetch(`${BASE_URL}/api/recovery/scheduled-list`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, userId }),
+    });
+
+    const result = await response.json();
+
+    setScheduledData(result.records || []);
+    setScheduledMode(true);
+    setSelectedAccounts([]);
+
+    setScheduledTitle(
+      type === "FUTURE"
+        ? "Future Scheduled Accounts"
+        : "Past Scheduled Accounts"
+    );
+
+  } catch (error) {
+    console.log("Scheduled accounts fetch error:", error);
+  }
+};
+
+  const resetBulk = async (type) => {
+    Alert.alert(
+      "Confirm",
+      `Reset ${selectedAccounts.length} accounts?`,
+      [
+        { text: "Cancel" },
+        {
+          text: "Yes",
+          onPress: async () => {
+            for (const acc of selectedAccounts) {
+              await fetch(`${BASE_URL}/api/recovery/reset-today`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  loanAccountNumber: acc,
+                  type,
+                }),
+              });
+            }
+
+            setScheduledMode(false);
+            fetchDPDData();
+          },
+        },
+      ]
+    );
   };
 
   const onRefresh = async () => {
@@ -71,7 +147,6 @@ setFilteredData(filteredRecords);
     setRefreshing(false);
   };
 
-  /* SEARCH */
   const handleSearch = (text) => {
     setSearchText(text);
 
@@ -91,9 +166,30 @@ setFilteredData(filteredRecords);
 
     setFilteredData(filtered);
   };
+const formatDateTime = (value) => {
+  if (!value) return "";
 
-  /* CARD */
-  const renderItem = ({ item }) => (
+  const cleaned = String(value).replace("T", " ").replace("Z", "");
+
+  const [datePart, timePart] = cleaned.split(" ");
+
+  const [year, month, day] = datePart.split("-");
+
+  const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const months = ["Jan","Feb","Mar","Apr","May","Jun",
+                  "Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  // create date only for day name (safe)
+  const tempDate = new Date(year, month - 1, day);
+
+  const dayName = days[tempDate.getDay()];
+  const monthName = months[month - 1];
+
+  const time = timePart.substring(0,5);
+
+  return `${dayName}, ${day} ${monthName} ${year}, ${time}`;
+};
+    const renderItem = ({ item }) => (
     <TouchableOpacity
       style={[
         styles.card,
@@ -101,71 +197,84 @@ setFilteredData(filteredRecords);
       ]}
       activeOpacity={item.AccountStatus === "PENDING" ? 0.7 : 1}
       onPress={() => {
-        if (item.AccountStatus !== "PENDING") {
-          Alert.alert(
-            "Not Allowed",
-            "This account is already IN PROCESS / COMPLETED. Please open it from Schedule For The Day."
-          );
+        const today = new Date().toISOString().split("T")[0];
+
+        const callDate = item.ScheduleCallTimestamp
+          ? new Date(item.ScheduleCallTimestamp).toISOString().split("T")[0]
+          : null;
+
+        const visitDate = item.ScheduleVisitTimestamp
+          ? new Date(item.ScheduleVisitTimestamp).toISOString().split("T")[0]
+          : null;
+
+        if (item.AccountStatus === "IN PROCESS") {
+          if (callDate === today || visitDate === today) {
+            Alert.alert(
+              "Scheduled For Today",
+              "This account is scheduled for today. Please open from Schedule For The Day."
+            );
+          } else {
+            Alert.alert(
+              "In Process",
+              "This account is in process. Use reset option."
+            );
+          }
           return;
         }
 
         navigation.navigate("AccountDetails", {
           loanAccountNumber: item.loanAccountNumber,
           visitSource: "ASSIGNED",
+          accountStatus: item.AccountStatus,
         });
       }}
     >
-<View style={styles.nameRow}>
-  
-  {/* 👤 PERSON ICON + NAME */}
-  <View style={styles.personRow}>
-    <Ionicons name="person-circle" size={22} color="#0a3d62" />
-    <Text style={styles.name}>{item.firstname}</Text>
-  </View>
-{item.AccountStatus && (
-          <View
-style={[
-    styles.statusBadge,
-    item.AccountStatus === "IN PROCESS"
-      ? styles.statusInProcess
-      : item.AccountStatus === "COMPLETED"
-      ? styles.statusCompleted
-      : styles.statusPending,
-  ]}
->
-  <Text
+      <View style={styles.nameRow}>
+        <View style={styles.personRow}>
+          <Ionicons name="person-circle" size={22} color="#0a3d62" />
+          <Text style={styles.name}>{item.firstname}</Text>
+        </View>
+
+       {item.AccountStatus && (
+  <View
     style={[
-      styles.statusText,
-      item.AccountStatus === "IN PROCESS" && { color: "#000" },
-      item.AccountStatus === "COMPLETED" && { color: "#000" },
-      item.AccountStatus === "PENDING" && { color: "#fff" },
+      styles.statusBadge,
+      item.AccountStatus === "IN PROCESS"
+        ? styles.statusInProcess
+        : item.AccountStatus === "COMPLETED"
+        ? styles.statusCompleted
+        : styles.statusPending,
     ]}
   >
-    {item.AccountStatus}
-  </Text>
-</View>
-
-        )}
+    <Text
+      style={[
+        styles.statusText,
+        item.AccountStatus === "IN PROCESS" && { color: "#000" },
+        item.AccountStatus === "COMPLETED" && { color: "#000" },
+        item.AccountStatus === "PENDING" && { color: "#fff" },
+      ]}
+    >
+      {item.AccountStatus}
+    </Text>
+  </View>
+)}
       </View>
 
       <Text style={styles.sub}>Loan A/c: {item.loanAccountNumber}</Text>
 
- <View style={styles.row}>
+      <View style={styles.row}>
+        <View style={styles.phoneRow}>
+          <Ionicons name="call" size={18} color="#27ae60" />
+          <Text style={styles.phoneText}>{item.mobileNumber}</Text>
+        </View>
 
-  <View style={styles.phoneRow}>
-    <Ionicons name="call" size={18} color="#27ae60" />
-    <Text style={styles.phoneText}>{item.mobileNumber}</Text>
-  </View>
-
-  <View style={{alignItems:"flex-end"}}>
-    <Text style={styles.amount}>₹ {item.overdueAmount}</Text>
-
-    <Text style={{fontSize:11,color:"#555"}}>
-      Attempt No : {item.AttemptCount || 0}
-    </Text>
-  </View>
-
-</View>
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={styles.amount}>₹ {item.overdueAmount}</Text>
+          <Text style={{ fontSize: 11 }}>
+            Attempt No : {item.AttemptCount || 0}
+          </Text>
+        </View>
+      </View>
     </TouchableOpacity>
   );
 
@@ -173,45 +282,106 @@ style={[
     return (
       <View style={styles.loader}>
         <ActivityIndicator size="large" color="#0a3d62" />
-        <Text>Loading accounts...</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* HEADER */}
- <View style={styles.header}>
-  {/* BACK BUTTON */}
-  <TouchableOpacity onPress={() => navigation.goBack()}>
+<View style={styles.header}>
+  <TouchableOpacity
+    style={styles.headerSide}
+    onPress={() => {
+      if (scheduledMode) {
+        setScheduledMode(false);
+      } else {
+        navigation.goBack();
+      }
+    }}
+  >
     <Ionicons name="arrow-back" size={24} color="#fff" />
   </TouchableOpacity>
 
-  {/* TITLE */}
   <Text style={styles.headerTitle}>DPD Accounts</Text>
 
-  {/* HOME BUTTON */}
-  <TouchableOpacity
-    onPress={async () => {
-      const saved = await AsyncStorage.getItem("LOGGED_USER");
-      const user = saved ? JSON.parse(saved) : null;
+  <View style={styles.headerRight}>
+    {!scheduledMode && (
+      <>
+        <TouchableOpacity
+          onPress={() => fetchScheduledAccounts("FUTURE")}
+          style={styles.iconBtn}
+        >
+          <Ionicons name="calendar-outline" size={22} color="#fff" />
+        </TouchableOpacity>
 
-      if (!user) {
-        Alert.alert("Error", "User session expired. Please login again.");
-        return;
-      }
+        <TouchableOpacity
+          onPress={() => fetchScheduledAccounts("PAST")}
+          style={styles.iconBtn}
+        >
+          <Ionicons name="time-outline" size={22} color="#fff" />
+        </TouchableOpacity>
+      </>
+    )}
 
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "Home", params: { user } }],
-      });
+    <TouchableOpacity
+      onPress={async () => {
+        const saved = await AsyncStorage.getItem("LOGGED_USER");
+        const user = saved ? JSON.parse(saved) : null;
+
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "Home", params: { user } }],
+        });
+      }}
+      style={styles.iconBtn}
+    >
+      <Ionicons name="home" size={22} color="#fff" />
+    </TouchableOpacity>
+  </View>
+      </View>
+{scheduledMode && (
+  <View
+    style={{
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginHorizontal: 14,
+      marginTop: 5,
     }}
   >
-    <Ionicons name="home" size={22} color="#fff" />
-  </TouchableOpacity>
-</View>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <Ionicons
+        name={
+          selectedAccounts.length === scheduledData.length &&
+          scheduledData.length > 0
+            ? "checkbox"
+            : "square-outline"
+        }
+        size={22}
+        color="#0a3d62"
+        onPress={() => {
+          if (selectedAccounts.length === scheduledData.length) {
+            setSelectedAccounts([]);
+          } else {
+            setSelectedAccounts(
+              scheduledData.map(x => x.LoanAccountNumber)
+            );
+          }
+        }}
+      />
 
-      {/* SEARCH */}
+      <Text
+        style={{
+          fontSize: 16,
+          fontWeight: "700",
+          color: "#0a3d62",
+        }}
+      >
+        {scheduledTitle}
+      </Text>
+    </View>
+  </View>
+)}
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={18} color="#777" />
         <TextInput
@@ -221,75 +391,161 @@ style={[
           onChangeText={handleSearch}
         />
       </View>
-{/* STATUS TABS */}
-<View style={styles.tabContainer}>
 
-  {["ALL", "PENDING", "IN PROCESS", "COMPLETED"].map((tab) => (
+      <FlatList
+        data={scheduledMode ? scheduledData : filteredData}
+        keyExtractor={(item, index) => index.toString()}
+      renderItem={({ item }) => {
+
+  // ⭐ scheduled mode UI
+if (scheduledMode) {
+  const isSelected = selectedAccounts.includes(item.LoanAccountNumber);
+
+return (
+  <View style={{ flexDirection: "row", alignItems: "flex-start", marginHorizontal: 6 }}>
+    
     <TouchableOpacity
-      key={tab}
-      style={[
-        styles.tabButton,
-        activeTab === tab && styles.activeTab,
-      ]}
       onPress={() => {
-        setActiveTab(tab);
-
-        if (tab === "ALL") {
-          setFilteredData(data);
-        } else {
-          const filtered = data.filter(
-            (item) => item.AccountStatus === tab
+        if (isSelected) {
+          setSelectedAccounts(
+            selectedAccounts.filter(x => x !== item.LoanAccountNumber)
           );
-          setFilteredData(filtered);
+        } else {
+          setSelectedAccounts([
+            ...selectedAccounts,
+            item.LoanAccountNumber
+          ]);
         }
       }}
+      style={{ paddingTop: 18, paddingRight: 6 }}
     >
-      <Text
-        style={[
-          styles.tabText,
-          activeTab === tab && styles.activeTabText,
-        ]}
-      >
-        {tab}
-      </Text>
+      <Ionicons
+        name={isSelected ? "checkbox" : "square-outline"}
+        size={22}
+        color="#0a3d62"
+      />
     </TouchableOpacity>
-  ))}
 
-</View>
-      {/* LIST */}
-      <FlatList
-        data={filteredData}
-        keyExtractor={(item, index) => index.toString()}
-        renderItem={renderItem}
-        contentContainerStyle={{ padding: 10 }}
+    <TouchableOpacity
+      style={[styles.card, { flex: 1 }]}
+      activeOpacity={1}
+    >
+      {/* reuse full dpd card layout */}
+      <View style={styles.nameRow}>
+        <View style={styles.personRow}>
+          <Ionicons name="person-circle" size={22} color="#0a3d62" />
+          <Text style={styles.name}>{item.firstname}</Text>
+        </View>
+      </View>
+
+      <Text style={styles.sub}>
+        Loan A/c: {item.LoanAccountNumber}
+      </Text>
+
+      <View style={styles.row}>
+        <View style={styles.phoneRow}>
+          <Ionicons name="call" size={18} color="#27ae60" />
+          <Text style={styles.phoneText}>{item.mobileNumber}</Text>
+        </View>
+
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={styles.amount}>₹ {item.overdueAmount}</Text>
+          <Text style={{ fontSize: 11 }}>
+            Attempt No : {item.AttemptCount || 0}
+          </Text>
+        </View>
+      </View>
+
+      {item.ScheduleCallTimestamp && (
+        <Text style={{ fontSize: 11, marginTop: 5, color: "#555" }}>
+          Call : {formatDateTime(item.ScheduleCallTimestamp)}
+        </Text>
+      )}
+
+      {item.ScheduleVisitTimestamp && (
+        <Text style={{ fontSize: 11, color: "#555" }}>
+          Visit : {formatDateTime(item.ScheduleVisitTimestamp)}
+        </Text>
+      )}
+    </TouchableOpacity>
+  </View>
+);
+}
+
+  // ⭐ normal dpd card
+  return renderItem({ item });
+}}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-        ListEmptyComponent={
-          <Text style={{ textAlign: "center", marginTop: 20 }}>
-            No records found
-          </Text>
-        }
       />
-    </View>
-  );
+      
+  
+{/* STICKY BOTTOM BUTTONS */}
+    {scheduledMode && (
+      <View style={styles.bottomActions}>
+        <TouchableOpacity
+          style={[styles.resetBtn, { backgroundColor: "#1e88e5" }]}
+          disabled={selectedAccounts.length === 0}
+          onPress={() => resetBulk("CALL")}
+        >
+          <Text style={styles.resetText}>
+            Reset Selected To Call Today
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.resetBtn, { backgroundColor: "#43a047" }]}
+          disabled={selectedAccounts.length === 0}
+          onPress={() => resetBulk("VISIT")}
+        >
+          <Text style={styles.resetText}>
+            Reset Selected To Visit Today
+          </Text>
+        </TouchableOpacity>
+      </View>
+    )}
+
+  </View>
+);
 }
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f4f6f9" },
+container: {
+  flex: 1,
+  backgroundColor: "#f2f4f7",
+},
+header: {
+  height: 70,
+  backgroundColor: "#0a3d62",
+  flexDirection: "row",
+  alignItems: "center",
+  paddingHorizontal: 10,
+  paddingTop: 20,
+},
 
-  header: {
-    height: 70,
-    backgroundColor: "#0a3d62",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 15,
-    paddingTop: 20,
-  },
+headerTitle: {
+  flex: 1,
+  textAlign: "center",
+  color: "#fff",
+  fontSize: 17,
+  fontWeight: "600",
+},
 
-  headerTitle: { color: "#fff", fontSize: 17, fontWeight: "600" },
+headerSide: {
+  width: 40,
+  alignItems: "center",
+  justifyContent: "center",
+},
 
+headerRight: {
+  flexDirection: "row",
+  alignItems: "center",
+},
+
+iconBtn: {
+  width: 36,
+  alignItems: "center",
+},
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -299,18 +555,28 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     elevation: 2,
   },
+  
 
   searchInput: { flex: 1, padding: 8, fontSize: 14 },
 
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-    elevation: 2,
-  },
+card: {
+  backgroundColor: "#fff",
+  borderRadius: 14,
+  padding: 14,
+  marginHorizontal: 10,
+  marginVertical: 6,
+
+  // ANDROID shadow
+  elevation: 4,
+
+  // IOS shadow
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.15,
+  shadowRadius: 3,
+},
 
   nameRow: {
     flexDirection: "row",
@@ -327,9 +593,18 @@ const styles = StyleSheet.create({
 
   amount: { fontSize: 14, fontWeight: "700", color: "#c0392b" },
 
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+statusBadge: {
+  paddingHorizontal: 12,
+  paddingVertical: 5,
+  borderRadius: 60,   // <-- IMPORTANT (pill)
+  alignSelf: "flex-start",
+},
 
-  statusText: { fontSize: 10, fontWeight: "700", color: "#fff" },
+statusText: {
+  fontSize: 10,
+  fontWeight: "700",
+  letterSpacing: 0.3,
+},
 
 statusInProcess: { backgroundColor: "#f39c12" }, // ORANGE
 statusCompleted: { backgroundColor: "#27ae60" }, // GREEN
@@ -377,5 +652,24 @@ tabText: {
 
 activeTabText: {
   color: "#fff",
+},
+bottomActions: {
+  padding: 12,
+  backgroundColor: "#fff",
+  borderTopWidth: 1,
+  borderColor: "#eee",
+},
+
+resetBtn: {
+  padding: 14,
+  borderRadius: 10,
+  marginBottom: 10,
+  alignItems: "center",
+},
+
+resetText: {
+  color: "#fff",
+  fontWeight: "700",
+  fontSize: 14,
 },
 });

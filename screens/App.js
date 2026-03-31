@@ -17,7 +17,8 @@ import ActivityHistoryScreen from "./ActivityHistoryScreen";
 import ActivityHistoryDetailsScreen from "./ActivityHistoryDetailsScreen";
 import SMAScreen from "./SMAScreen";
 import SMAResults from "./SMAResults";
-
+import NearbyCustomersScreen from "./NearbyCustomersScreen";
+import ResetForToday from "./ResetForToday";
 
 const Stack = createNativeStackNavigator();
 
@@ -50,6 +51,14 @@ export default function App() {
 <Stack.Screen name="SMAResults" component={SMAResults}/>
 
 <Stack.Screen name="LeadForm" component={LeadFormScreen} />
+<Stack.Screen
+  name="NearbyCustomers"
+  component={NearbyCustomersScreen}
+/>
+<Stack.Screen
+  name="ResetForToday"
+  component={ResetForToday}
+/>
       </Stack.Navigator>
     </NavigationContainer>
   );

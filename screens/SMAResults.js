@@ -12,6 +12,7 @@ Modal,
 Linking,
 BackHandler,
 AppState,
+Alert,
 } from "react-native";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import BASE_URL from "./config";
@@ -27,8 +28,9 @@ const [data, setData] = useState([]);
 const [searchText,setSearchText] = useState("");
 const [sortOption,setSortOption] = useState("");
 const [showSortModal,setShowSortModal] = useState(false);
-const [currentPage,setCurrentPage] = useState(1);
-const recordsPerPage = 10;
+
+const [visibleData,setVisibleData] = useState([]);
+const [itemsToShow,setItemsToShow] = useState(20);
 
 const [showCallModal, setShowCallModal] = useState(false);
 const [showBranchContacts, setShowBranchContacts] = useState(false);
@@ -71,6 +73,63 @@ const [branchOutcome,setBranchOutcome] = useState(null);
 const [branchReason,setBranchReason] = useState("");
 
 const [searchQuery,setSearchQuery] = useState("");
+
+const [showHistoryModal,setShowHistoryModal] = useState(false);
+const [historyData,setHistoryData] = useState([]);
+const [historyLoading,setHistoryLoading] = useState(false);
+
+const fetchAccountHistory = async (accountNumber) => {
+
+try{
+
+setHistoryLoading(true);
+
+const res = await fetch(
+`${BASE_URL}/api/sma/history?accountNumber=${accountNumber}`
+);
+
+const result = await res.json();
+
+const grouped = {};
+
+result.forEach(row => {
+
+if(!grouped[row.SessionId]){
+grouped[row.SessionId] = {
+sessionTime: row.StartedAt,
+logs:[]
+};
+}
+
+let meta = null;
+
+try{
+meta = row.MetadataJson ? JSON.parse(row.MetadataJson) : null;
+}catch(e){
+meta = null;
+}
+
+grouped[row.SessionId].logs.push({
+...row,
+meta
+});
+
+});
+
+setHistoryData(Object.values(grouped).sort(
+(a,b)=>new Date(b.sessionTime)-new Date(a.sessionTime)
+));
+setShowHistoryModal(true);
+
+}catch(err){
+
+console.log("History fetch error:",err);
+
+}
+
+setHistoryLoading(false);
+
+};
 
 const ThreeActionButtons = ({
   onSubmit,
@@ -412,6 +471,14 @@ fetchData();
 }, [cluster, branchCode, branchName, irac]);
 
 const [selectedAccount, setSelectedAccount] = useState(null);
+
+useEffect(() => {
+  if (!selectedAccount) return;
+
+  fetchCustomerNumbers();
+
+}, [selectedAccount]);
+
 const filteredData = data.filter(item => {
 
 const iracValue = parseInt(item["NEW IRAC"]);
@@ -444,41 +511,48 @@ item["NEW IRAC"]?.toLowerCase().includes(text)
 );
 
 });
-let sortedData = [...filteredData];
+const sortedData = React.useMemo(()=>{
+
+let arr = [...filteredData];
 
 if(sortOption === "OUT_BAL_DESC"){
-
-sortedData = sortedData.sort((a,b)=>{
-
-const balA = Math.abs(
-parseFloat((a["Outstanding Balance"] || "0").toString().replace(/,/g,""))
-);
-
-const balB = Math.abs(
-parseFloat((b["Outstanding Balance"] || "0").toString().replace(/,/g,""))
-);
-
+arr.sort((a,b)=>{
+const balA = Math.abs(parseFloat((a["Outstanding Balance"]||"0").toString().replace(/,/g,"")));
+const balB = Math.abs(parseFloat((b["Outstanding Balance"]||"0").toString().replace(/,/g,"")));
 return balB - balA;
-
 });
-
 }
 
 if(sortOption === "EMI_DESC"){
-sortedData.sort((a,b)=>{
-
-const emiA = Number(String(a["EMIs Due"] || "0"));
-const emiB = Number(String(b["EMIs Due"] || "0"));
-
+arr.sort((a,b)=>{
+const emiA = Number(String(a["EMIs Due"]||"0"));
+const emiB = Number(String(b["EMIs Due"]||"0"));
 return emiB - emiA;
-
 });
 }
 
-const totalPages = Math.ceil(sortedData.length / recordsPerPage);
-const startIndex = (currentPage - 1) * recordsPerPage;
+return arr;
 
-const paginatedData = sortedData.slice(startIndex, startIndex + recordsPerPage);
+},[filteredData,sortOption]);
+
+
+useEffect(()=>{
+  setItemsToShow(20);
+},[searchQuery,sortOption]);
+
+useEffect(()=>{
+
+setVisibleData(sortedData.slice(0,itemsToShow));
+
+},[itemsToShow,searchQuery,sortOption,data]);
+
+const loadMoreData = () => {
+
+if(itemsToShow >= sortedData.length) return;
+
+setItemsToShow(prev => prev + 20);
+
+};
 
 const renderRow = (label, value) => (
   <View style={styles.row}>
@@ -591,11 +665,11 @@ const renderTable = () => (
         <Text style={styles.th}>Product Group</Text>
       </View>
 
-     <FlatList
-  data={[...paginatedData]}
-  extraData={currentPage}
+<FlatList
+data={visibleData}
+scrollEnabled={false}
+style={{flexGrow:0}}
   keyExtractor={(item,index)=>index.toString()}
-  style={{flexGrow:0}}
         renderItem={({item, index}) => (
           <TouchableOpacity
   style={styles.tableRow}
@@ -608,7 +682,7 @@ setSelectedAccount(item);
 
 }}
 >
-            <Text style={styles.tdCenter}>{startIndex + index + 1}</Text>
+            <Text style={styles.tdCenter}>{index + 1}</Text>
             <Text style={styles.tdCenter}>{item["Br Code"]}</Text>
             <Text style={styles.td}>{item["Branch Name"]}</Text>
             <Text style={styles.tdCenter}>{item["Cluster Code"]}</Text>
@@ -661,6 +735,66 @@ return (
 )
 } 
 
+const deleteSMAAlternate = async (number) => {
+  try {
+
+    const savedUser = await AsyncStorage.getItem("LOGGED_USER");
+    const user = savedUser ? JSON.parse(savedUser) : null;
+
+    await fetch(`${BASE_URL}/api/account/delete-alternate`,{
+      method:"POST",
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        loanAccountNumber:selectedAccount["Account No."],
+        alternateNumber:number,
+        deletedBy: user?.UserName   // ⭐ send username
+      })
+    });
+
+    setCustomerNumbers(prev =>
+      prev.filter(n => n.AlternateNumber !== number)
+    );
+
+    // optional log in SMA timeline
+    await logSMAAction(
+      "ALTERNATE_NUMBER_DELETED",
+      "Alternate Number Deleted",
+      { phoneNumber:number }
+    );
+
+  } catch(err){
+    console.log("Delete SMA error:",err);
+  }
+};
+
+const fetchCustomerNumbers = async () => {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/api/customer-numbers?accountNumber=${selectedAccount["Account No."]}`
+    );
+
+    const data = await res.json();
+
+    if (Array.isArray(data)) {
+      // keep full list
+      setCustomerNumbers(data);
+
+      // extract alternates only
+      const alternates = data
+        .map(x => x.AlternateNumber)
+        .filter(Boolean);
+
+      // show last added in input
+      if (alternates.length > 0) {
+        setAlternateNumber(alternates[alternates.length - 1]);
+      }
+    }
+
+  } catch (err) {
+    console.log("Fetch numbers error:", err);
+  }
+};
+
 return(
 
 <View style={styles.container}>
@@ -669,7 +803,16 @@ return(
 
 <TouchableOpacity
 style={{marginTop:15}}
-onPress={() => navigation.goBack()}
+onPress={() => {
+
+if(selectedAccount){
+setSelectedAccount(null);   // go back to multiple cards
+}
+else{
+navigation.goBack();        // go back to filters
+}
+
+}}
 >
 <Ionicons name="arrow-back" size={24} color="#fff" />
 </TouchableOpacity>
@@ -678,7 +821,22 @@ onPress={() => navigation.goBack()}
 
 <TouchableOpacity
 style={{marginTop:15}}
-onPress={() => navigation.navigate("Home")}
+onPress={async () => {
+
+const saved = await AsyncStorage.getItem("LOGGED_USER");
+const user = saved ? JSON.parse(saved) : null;
+
+if(!user){
+alert("User session expired. Please login again.");
+return;
+}
+
+navigation.reset({
+  index: 0,
+  routes: [{ name: "Home", params: { user } }],
+});
+
+}}
 >
 <Ionicons name="home" size={24} color="#fff" />
 </TouchableOpacity>
@@ -736,7 +894,6 @@ style={{flex:1,fontSize:14}}
 <TouchableOpacity
 onPress={()=>{
 setSearchQuery(searchText);
-setCurrentPage(1);
 }}
 style={{marginRight:8}}
 >
@@ -775,7 +932,6 @@ position:"relative"
 value={sortOption}
 onValueChange={(value)=>{
 setSortOption(value);
-setCurrentPage(1);
 }}
 items={[
 {label:"Outstanding Balance (High → Low)", value:"OUT_BAL_DESC"},
@@ -814,41 +970,86 @@ top:10
 Total Records: {sortedData.length}
 </Text>
 
-{renderTable()}
+<FlatList
+data={visibleData}
 
-<View style={{
-flexDirection:"row",
-justifyContent:"space-between",
-marginVertical:15
-}}>
+initialNumToRender={20}
+maxToRenderPerBatch={20}
+windowSize={10}
+removeClippedSubviews={true}
 
-<TouchableOpacity
-onPress={()=>currentPage>1 && setCurrentPage(currentPage-1)}
-style={{
-backgroundColor:"#0a3d62",
-padding:10,
-borderRadius:8
-}}
+keyExtractor={(item,index)=>index.toString()}
+contentContainerStyle={{paddingBottom:40}}
+onEndReached={loadMoreData}
+onEndReachedThreshold={0.5}
+renderItem={({item})=>(
+
+    <TouchableOpacity
+  style={styles.smaCard}
+  onPress={() => setSelectedAccount(item)}
 >
-<Text style={{color:"#fff"}}>Previous</Text>
-</TouchableOpacity>
 
-<Text style={{alignSelf:"center"}}>
-Page {currentPage} / {totalPages}
+<View style={styles.cardHeader}>
+<View style={{flex:1}}>
+
+<View style={{flexDirection:"row", alignItems:"center"}}>
+<Ionicons name="person-circle" size={18} color="#0a3d62" style={{marginRight:5}} />
+
+<Text style={styles.name}>
+{item["Account Name"]}
+</Text>
+</View>
+
+<Text style={styles.acc}>
+Loan A/c : {item["Account No."]}
 </Text>
 
+</View>
+
+<View style={{alignItems:"center"}}>
+
 <TouchableOpacity
-onPress={()=>currentPage<totalPages && setCurrentPage(currentPage+1)}
-style={{
-backgroundColor:"#0a3d62",
-padding:10,
-borderRadius:8
-}}
+onPress={()=>fetchAccountHistory(item["Account No."])}
 >
-<Text style={{color:"#fff"}}>Next</Text>
+<Ionicons name="time-outline" size={22} color="#0a3d62"/>
 </TouchableOpacity>
 
+<Text style={styles.iracSmall}>
+NEW IRAC : {item["NEW IRAC"]}
+</Text>
 </View>
+
+</View>
+
+
+{/* Branch + EMI */}
+<View style={styles.doubleRow}>
+<Text style={styles.smallText}>
+Branch Code: {item["Br Code"]}
+</Text>
+
+<Text style={styles.smallText}>
+EMIs Due : {item["EMIs Due"]}
+</Text>
+</View>
+
+
+{/* Mobile + Outstanding */}
+<View style={styles.doubleRow}>
+
+<Text style={styles.smallText}>
+📞 {item["MobileNumber"] || item["AlternateNumber"] || "N/A"}
+</Text>
+
+<Text style={styles.amount}>
+₹ {formatAmount(item["Outstanding Balance"])}
+</Text>
+
+</View>
+
+</TouchableOpacity>
+)}
+/>
 
 </View>
 }
@@ -907,27 +1108,13 @@ console.log("Branch contacts error:",err);
 
 <TouchableOpacity
 style={styles.modalButton}
-onPress={async () => {
+onPress={() => {
 
 pushModal("CALL_OPTION");
 setShowCallModal(false);
 
-try{
-
-const response = await fetch(
-`${BASE_URL}/api/customer-numbers?accountNumber=${selectedAccount["Account No."]}`
-);
-
-const result = await response.json();
-
-setCustomerNumbers(result);
-
-setAlternateNumber("");
+// DO NOT FETCH AGAIN — already fetched in useEffect
 setShowCustomerNumbers(true);
-
-}catch(err){
-console.log("Customer fetch error:",err);
-}
 
 }}
 >
@@ -1051,13 +1238,13 @@ setModalStack([]);
 
 {/* Primary Number */}
 
-{customerNumbers.length > 0 && customerNumbers[0].mobileNumber && (
+{customerNumbers.length > 0 && customerNumbers?.[0]?.mobileNumber && (
 
 <TouchableOpacity
 style={styles.modalButton}
 onPress={async ()=>{
 
-const phone = customerNumbers[0].mobileNumber;
+const phone = customerNumbers?.[0]?.mobileNumber;
 
 await startSMASession(selectedAccount["Account No."]);
 
@@ -1079,21 +1266,40 @@ Customer Number
 </Text>
 
 <Text style={{color:"#fff"}}>
-{customerNumbers[0].mobileNumber}
+{customerNumbers?.[0]?.mobileNumber}
 </Text>
 
 </TouchableOpacity>
 
 )}
 
-{/* Alternate Number */}
+{/* Alternate Numbers */}
 
-{customerNumbers[0]?.AlternateNumber && (
+{customerNumbers
+?.filter(item => item.AlternateNumber)
+.map((item,index)=>(
+<View
+key={index}
+style={[styles.modalButton,{flexDirection:"row",justifyContent:"space-between",alignItems:"center"}]}
+>
+
+<View>
+<Text style={styles.modalButtonText}>
+Alternate Number {index+1}
+</Text>
+
+<Text style={{color:"#fff"}}>
+{item.AlternateNumber}
+</Text>
+</View>
+
+<View style={{flexDirection:"row"}}>
+
+{/* CALL ICON */}
 <TouchableOpacity
-style={styles.modalButton}
 onPress={async ()=>{
 
-const phone = customerNumbers[0].AlternateNumber;
+const phone = item.AlternateNumber;
 
 await startSMASession(selectedAccount["Account No."]);
 
@@ -1109,18 +1315,20 @@ Linking.openURL(`tel:${phone}`);
 
 }}
 >
-
-<Text style={styles.modalButtonText}>
-Alternate Number
-</Text>
-
-<Text style={{color:"#fff"}}>
-{customerNumbers[0].AlternateNumber}
-</Text>
-
+<Ionicons name="call" size={20} color="#fff" style={{marginRight:15}}/>
 </TouchableOpacity>
 
-)}
+{/* DELETE ICON */}
+<TouchableOpacity
+onPress={()=>deleteSMAAlternate(item.AlternateNumber)}
+>
+<Ionicons name="trash" size={20} color="#ffcccc"/>
+</TouchableOpacity>
+
+</View>
+
+</View>
+))}
 
 {/* Add Alternate */}
 
@@ -1148,7 +1356,20 @@ width:"100%"
 
 <TouchableOpacity
 style={styles.modalButton}
+
 onPress={async ()=>{
+
+const altCount = customerNumbers.filter(n => n.AlternateNumber).length;
+
+if(altCount >= 5){
+Alert.alert(
+  "Limit Reached",
+  "Maximum 5 alternate numbers allowed. Delete any existing number and add new."
+);
+return;
+}
+
+// continue save logic
 
 // ⭐ VALIDATION
 if(!isValidIndianMobile(alternateNumber)){
@@ -1158,25 +1379,30 @@ if(!isValidIndianMobile(alternateNumber)){
 
 try{
 
-const res = await fetch(`${BASE_URL}/api/account/save-alternate`,{
+const user = await AsyncStorage.getItem("LOGGED_USER");
+const parsedUser = user ? JSON.parse(user) : null;
 
+const res = await fetch(`${BASE_URL}/api/account/save-alternate`,{
   method:"POST",
-headers:{'Content-Type':'application/json'},
-body:JSON.stringify({
-loanAccountNumber:selectedAccount["Account No."],
-alternateNumber
-})
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({
+    loanAccountNumber:selectedAccount["Account No."],
+    alternateNumber,
+    addedBy: parsedUser?.UserName || "UNKNOWN"
+  })
 });
 
 if(res.ok){
 
-// ⭐ Immediately show alternate number
-setCustomerNumbers([{
-mobileNumber: customerNumbers[0]?.mobileNumber || null,
-AlternateNumber: alternateNumber
-}]);
+await fetchCustomerNumbers();
 
-// ⭐ clear input box
+// ⭐ LOG THE NEW NUMBER IN HISTORY
+await logSMAAction(
+"ALTERNATE_NUMBER_ADDED",
+"Alternate Number Added",
+{phoneNumber: alternateNumber}
+);
+
 setAlternateNumber("");
 
 alert("Alternate number saved");
@@ -1330,15 +1556,31 @@ Schedule Collection Visit
 </View>
 
 <Calendar
-onDayPress={(day)=>{
-setSelectedDate(day.dateString);
-}}
-markedDates={{
-[selectedDate]:{
-selected:true,
-selectedColor:"#0a3d62"
-}
-}}
+  onDayPress={(day)=>{
+    setSelectedDate(day.dateString);
+  }}
+  markedDates={{
+    [selectedDate]:{
+      selected:true,
+      selectedColor:"#0a3d62"
+    }
+  }}
+
+  // ✅ block past dates
+  minDate={new Date().toISOString().split("T")[0]}
+  disableAllTouchEventsForDisabledDays={true}
+
+  // ✅ enable swipe
+  enableSwipeMonths={true}
+
+  // ✅ arrows
+  renderArrow={(direction)=>(
+    <Ionicons
+      name={direction === "left" ? "chevron-back" : "chevron-forward"}
+      size={22}
+      color="#0a3d62"
+    />
+  )}
 />
 
 {/* TIME INPUTS */}
@@ -1373,19 +1615,23 @@ onChangeText={setMinute}
 placeholder="MM"
 />
 
-<TextInput
+<TouchableOpacity
+onPress={()=> setAmpm(ampm === "AM" ? "PM" : "AM")}
 style={{
 borderWidth:1,
 borderColor:"#e5e7eb",
 borderRadius:8,
 padding:10,
 width:"30%",
-textAlign:"center"
+alignItems:"center",
+justifyContent:"center",
+backgroundColor:"#f8fafc"
 }}
-value={ampm}
-onChangeText={setAmpm}
-placeholder="AM"
-/>
+>
+<Text style={{fontSize:16,fontWeight:"600"}}>
+{ampm}
+</Text>
+</TouchableOpacity>
 
 </View>
 
@@ -2324,6 +2570,112 @@ Continue
 </View>
 
 </Modal>
+<Modal
+visible={showHistoryModal}
+transparent
+animationType="slide"
+>
+
+<View style={styles.modalOverlay}>
+
+<View style={[styles.modalBox,{maxHeight:"80%"}]}>
+
+<View style={{flexDirection:"row",justifyContent:"space-between"}}>
+
+<Text style={{fontWeight:"bold",fontSize:16}}>
+Account History
+</Text>
+
+<TouchableOpacity
+onPress={()=>setShowHistoryModal(false)}
+>
+<Ionicons name="close" size={22}/>
+</TouchableOpacity>
+
+</View>
+
+{historyLoading ? (
+<Text style={{marginTop:20}}>Loading...</Text>
+) : (
+
+<FlatList
+data={historyData}
+keyExtractor={(item,index)=>index.toString()}
+renderItem={({item})=>(
+
+<View style={{marginTop:15}}>
+
+<Text style={{
+fontWeight:"bold",
+fontSize:14,
+marginBottom:6,
+color:"#0a3d62"
+}}>
+{new Date(item.logs[0]?.CreatedAt).toLocaleString("en-IN")}
+</Text>
+
+{item.logs?.map((log,i)=>(
+
+<View
+key={i}
+style={{flexDirection:"row",marginBottom:6}}
+>
+
+<View style={{
+width:10,
+height:10,
+borderRadius:5,
+backgroundColor:"#0a3d62",
+marginRight:10,
+marginTop:5
+}}/>
+
+<View style={{flex:1}}>
+
+<Text style={{fontWeight:"600"}}>
+{log.ActionLabel}
+</Text>
+
+{/* Scheduled Visit Date */}
+{log.meta?.visitDate && (
+<Text style={{fontSize:12,color:"#444"}}>
+📅 {log.meta.visitDate}  
+⏰ {log.meta.hour}:{log.meta.minute} {log.meta.ampm}
+</Text>
+)}
+
+{/* Dialed / Alternate Phone */}
+{log.meta?.phoneNumber && (
+<Text style={{fontSize:12,color:"#444"}}>
+📞 {log.meta.phoneNumber}
+</Text>
+)}
+
+{/* Notes */}
+{log.NoteText && (
+<Text style={{fontSize:12,color:"#444"}}>
+📝 {log.NoteText}
+</Text>
+)}
+
+</View>
+
+</View>
+
+))}
+
+</View>
+
+)}
+/>
+
+)}
+
+</View>
+
+</View>
+
+</Modal>
 </View>
 
 );
@@ -2591,5 +2943,60 @@ optionSubText:{
 fontSize:13,
 color:"#64748b",
 marginTop:2
-}
+},
+smaCard:{
+backgroundColor:"#fff",
+padding:14,
+borderRadius:12,
+marginBottom:12,
+borderWidth:1,
+borderColor:"#e5e7eb",
+elevation:3
+},
+
+cardHeader:{
+flexDirection:"row",
+justifyContent:"space-between",
+alignItems:"center",
+marginBottom:8
+},
+
+name:{
+fontSize:14,
+fontWeight:"700",
+color:"#0a3d62"
+},
+
+acc:{
+fontSize:12,
+color:"#555"
+},
+
+cardRow:{
+flexDirection:"row",
+justifyContent:"space-between",
+marginTop:4
+},
+
+amount:{
+fontWeight:"700",
+color:"#c0392b"
+},
+doubleRow:{
+flexDirection:"row",
+justifyContent:"space-between",
+marginTop:6
+},
+
+smallText:{
+fontSize:13,
+color:"#555"
+},
+
+iracSmall:{
+fontSize:12,
+fontWeight:"700",
+color:"#0a3d62",
+marginTop:2
+},
 });

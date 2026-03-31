@@ -49,9 +49,9 @@ const scheduleTime =
     <View style={styles.timelineRow}>
       <View style={styles.dot} />
       <View style={styles.content}>
-        <Text style={styles.action}>
-          {item.SessionType} → {item.ActionLabel}
-        </Text>
+       <Text style={styles.action}>
+  {(item.SourceType === "CO_USE" ? "CO USE" : item.SessionType)} → {item.ActionLabel}
+</Text>
 
         <Text style={styles.time}>
           {item.FormattedTime}
@@ -111,8 +111,10 @@ const scheduleTime =
       <View style={styles.accountCard}>
         <Text style={styles.customer}>{customerName}</Text>
         <Text style={styles.account}>
-          Loan A/c: {loanAccountNumber}
-        </Text>
+  {loanAccountNumber?.length === 10
+    ? `Mobile No: ${loanAccountNumber}`
+    : `Loan A/c: ${loanAccountNumber}`}
+</Text>
       </View>
 
       {/* Timeline */}
