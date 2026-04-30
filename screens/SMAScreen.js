@@ -12,7 +12,7 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SMAScreen = ({ navigation }) => {
-
+const [loggedUser,setLoggedUser] = useState(null);
 const [cluster,setCluster] = useState("");
 const [branchCode,setBranchCode] = useState("");
 const [branchName,setBranchName] = useState("");
@@ -24,6 +24,19 @@ const [selectedIRAC,setSelectedIRAC] = useState("");
 const [step,setStep] = useState("IRAC");
 
 useEffect(()=>{
+
+const loadUser = async ()=>{
+const saved = await AsyncStorage.getItem("LOGGED_USER");
+const user = saved ? JSON.parse(saved) : null;
+setLoggedUser(user);
+
+console.log("📱 SMAScreen loaded", {
+userId:user?.UserId,
+userName:user?.UserName
+});
+};
+
+loadUser();
 
 const unsubscribe = navigation.addListener("beforeRemove", e=>{
 
@@ -78,9 +91,7 @@ iracOptions = [
 {label:"0",value:"0"},
 {label:"1",value:"1"},
 {label:"2",value:"2"},
-{label:"3",value:"3"},
-{label:"4",value:"4"}
-
+{label:"3",value:"3"}
 ];
 
 }
@@ -88,6 +99,7 @@ iracOptions = [
 else if(mode === "NPA"){
 
 iracOptions = [
+{label:"4",value:"4"},  
 {label:"5",value:"5"},
 {label:"6",value:"6"},
 {label:"7",value:"7"}
@@ -96,7 +108,35 @@ iracOptions = [
 
 }
 
+console.log("📦 IRAC options prepared", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  mode,
+  selectedIRAC,
+  options: iracOptions
+});
+
 const handleApplyFilters = () => {
+
+console.log("🎯 Apply Filters", {
+userId:loggedUser?.UserId,
+userName:loggedUser?.UserName,
+cluster,
+branchCode,
+branchName,
+irac:selectedIRAC || irac,
+mode
+});
+
+console.log("📥 SMAResults data fetch trigger", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  cluster,
+  branchCode,
+  branchName,
+  irac: selectedIRAC || irac,
+  mode
+});
 
 navigation.navigate("SMAResults",{
 
@@ -112,6 +152,10 @@ mode
 
 const handleClearFilters = () => {
 
+console.log("🧹 Clear Filters clicked", {
+userId:loggedUser?.UserId,
+userName:loggedUser?.UserName
+});
 setBranchCode("");
 setBranchName("");
 setIrac("");
@@ -119,6 +163,13 @@ setIrac("");
 };
 
 const handleAllBranches = () => {
+
+console.log("📋 All Branches clicked", {
+userId:loggedUser?.UserId,
+userName:loggedUser?.UserName,
+cluster,
+mode
+});
 
 navigation.navigate("SMAResults",{
 
@@ -141,16 +192,21 @@ return (
 style={styles.headerIcon}
 onPress={() => {
 
+console.log("🔘 Back button clicked", { step });
+
 if(step === "FILTER"){
+console.log("🔀 FILTER → CLUSTER");
 setStep("CLUSTER");
 return;
 }
 
 if(step === "CLUSTER"){
+console.log("🔀 CLUSTER → IRAC");
 setStep("IRAC");
 return;
 }
 
+console.log("🔀 Navigate back");
 navigation.goBack();
 
 }}
@@ -166,13 +222,21 @@ NPA & SMA
 style={styles.headerIconRight}
 onPress={async () => {
 
+console.log("🔘 Home button clicked");
+
 const saved = await AsyncStorage.getItem("LOGGED_USER");
+
+console.log("📦 Reading LOGGED_USER");
+
 const user = saved ? JSON.parse(saved) : null;
 
 if(!user){
+console.log("❌ User session expired");
 alert("User session expired. Please login again.");
 return;
 }
+
+console.log("🔀 Navigate Home");
 
 navigation.reset({
   index: 0,
@@ -204,6 +268,12 @@ NPA & SMA Follow-Up
 <RNPickerSelect
 value={selectedIRAC}
 onValueChange={(value)=>{
+
+console.log("🔘 IRAC selected", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  value
+});
 setSelectedIRAC(value);
 setStep("CLUSTER");
 }}
@@ -255,6 +325,8 @@ color="#555"
 style={styles.button}
 onPress={()=>{
 
+console.log("🔘 SMA selected");
+
 setMode("SMA");
 setStep("CLUSTER");
 
@@ -268,6 +340,8 @@ setStep("CLUSTER");
 style={styles.button}
 onPress={()=>{
 
+console.log("🔘 NPA selected");
+
 setMode("NPA");
 setStep("CLUSTER");
 
@@ -279,8 +353,6 @@ setStep("CLUSTER");
 </>
 
 )}
-
-
 
 {/* STEP 2 : CLUSTER */}
 
@@ -299,7 +371,20 @@ onValueChange={(value)=>{
 
 if(!value) return;
 
+console.log("🔘 Cluster selected", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  cluster: value
+});
+
 setCluster(value);
+console.log("📦 Filter state initialized", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  cluster: value,
+  mode,
+  selectedIRAC
+});
 setStep("FILTER");
 
 }}
@@ -384,7 +469,17 @@ onChangeText={setBranchName}
 
 value={selectedIRAC || irac}
 
-onValueChange={(value)=>setIrac(value)}
+onValueChange={(value)=>{
+
+console.log("🔘 IRAC changed in filter", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  value
+});
+
+setIrac(value)
+
+}}
 
 items={iracOptions}
 

@@ -21,42 +21,65 @@ import {
 export default function NearbyCustomersScreen({ navigation }) {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadNearbyCustomers();
-  }, []);
+const [loggedUser, setLoggedUser] = useState(null);
+useEffect(() => {
+console.log("📱 NearbyCustomersScreen loaded");
+  loadNearbyCustomers();
+}, []);
 
   const loadNearbyCustomers = async () => {
+
+console.log("📥 Load nearby customers started");
+
     try {
       setLoading(true);
+      console.log("⏳ Loading nearby customers...");
 
-      const allowed = await requestLocationPermission();
-      if (!allowed) {
-        Alert.alert("Permission required", "Location permission is needed");
-        setLoading(false);
-        return;
-      }
 
       const position = await getCurrentLocation();
-
+console.log("📍 Current location", position?.coords);
       const lat = position.coords.latitude;
       const lng = position.coords.longitude;
 
-      const user = JSON.parse(await AsyncStorage.getItem("LOGGED_USER"));
-
+      const saved = await AsyncStorage.getItem("LOGGED_USER");
+const user = saved ? JSON.parse(saved) : null;
+setLoggedUser(user);
+console.log("👤 Logged user", {
+userId: user?.UserId,
+userName: user?.UserName || user?.name
+});
+console.log("🌐 Calling /nearby-customers", {
+lat,
+lng,
+userId: user?.UserId,
+userName: user?.UserName || user?.name
+});
       const response = await fetch(
-        `${BASE_URL}/nearby-customers?lat=${lat}&lng=${lng}&userId=${user.UserId}`
-      );
+`${BASE_URL}/nearby-customers?lat=${lat}&lng=${lng}&userId=${user?.UserId}&userName=${user?.UserName}`
+)
 
-      const data = await response.json();
+const data = await response.json();
+
+console.log("📦 Nearby customers raw response", {
+userId: user?.UserId,
+userName: user?.UserName || user?.name,
+data
+});
+
+console.log("✅ Nearby customers received", data?.length);
 
       // ✅ SORT LOW → HIGH DISTANCE
       const sorted = data.sort((a, b) => a.distance - b.distance);
-
+console.log("📊 Customers sorted by distance");
+console.log("📦 Sorted nearby customers", {
+userId: user?.UserId,
+userName: user?.UserName || user?.name,
+sorted
+});
       setCustomers(sorted);
       setLoading(false);
     } catch (error) {
-      console.log("Nearby customers error:", error);
+      console.log("❌ Nearby customers error", error);
       setLoading(false);
     }
   };
@@ -64,11 +87,29 @@ export default function NearbyCustomersScreen({ navigation }) {
   const renderItem = ({ item }) => (
     <TouchableOpacity
       style={styles.card}
-      onPress={() =>
-        navigation.navigate("AccountDetails", {
-          loanAccountNumber: item.loanAccountNumber,
-        })
-      }
+      onPress={() => {
+
+console.log("🔘 Customer selected", {
+loanAccountNumber: item.loanAccountNumber,
+userId: loggedUser?.UserId,
+userName: loggedUser?.UserName || loggedUser?.name
+});
+  if (item.AccountStatus === "PENDING") {
+
+    navigation.navigate("AccountDetails", {
+      loanAccountNumber: item.loanAccountNumber,
+    });
+
+  } else if (item.AccountStatus === "IN PROCESS") {
+
+    navigation.navigate("DPDList", {
+      dpdQueue: "ALL",
+      userId: loggedUser?.UserId,
+    });
+
+  }
+
+}}
     >
       <View style={styles.rowBetween}>
         
@@ -107,7 +148,10 @@ export default function NearbyCustomersScreen({ navigation }) {
 
       {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+      <TouchableOpacity onPress={() => {
+console.log("🔘 Back clicked");
+navigation.goBack();
+}}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
 
@@ -117,6 +161,7 @@ export default function NearbyCustomersScreen({ navigation }) {
 
         <TouchableOpacity
           onPress={async () => {
+            console.log("🔘 Home clicked from NearbyCustomers");
             const saved = await AsyncStorage.getItem("LOGGED_USER");
             const user = saved ? JSON.parse(saved) : null;
 
@@ -143,7 +188,10 @@ export default function NearbyCustomersScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.retryBtn}
-            onPress={loadNearbyCustomers}
+           onPress={()=>{
+console.log("🔁 Retry nearby customers");
+loadNearbyCustomers();
+}}
           >
             <Text style={{ color: "#fff" }}>Retry</Text>
           </TouchableOpacity>

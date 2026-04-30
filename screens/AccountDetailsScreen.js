@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
 import BASE_URL from "./config";
 import {
@@ -281,20 +281,34 @@ useEffect(() => {
 const getLoggedUser = async () => {
   try {
     const u = await AsyncStorage.getItem("LOGGED_USER");
-    return u ? JSON.parse(u) : null;
+    const user = u ? JSON.parse(u) : null;
+
+    console.log("👤 [ACCOUNT_DETAILS] Logged user", {
+      userId: user?.UserId,
+      userName: user?.UserName,
+      deviceId: user?.DeviceId
+    });
+
+    return user;
   } catch (e) {
     return null;
   }
 };
 
 const startCallSession = async () => {
+
   try {
     const user = await getLoggedUser();
+
     if (!user?.UserId || !user?.UserName) {
       Alert.alert("Error", "Login expired. Please login again.");
       return null;
     }
-
+      console.log("📡 [CALL] Start session", {
+  userId: user.UserId,
+  userName: user.UserName,
+  loanAccountNumber
+});
     const res = await fetch(`${BASE_URL}/api/activity/session/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -310,6 +324,11 @@ body: JSON.stringify({
     });
 
     const data = await res.json();
+    console.log("📦 [CALL] Session created", {
+  sessionId: data.sessionId,
+  userId: user.UserId,
+  userName: user.UserName
+});
     setCallSessionId(data.sessionId);
     return data.sessionId;
   } catch (err) {
@@ -324,14 +343,29 @@ const logCallAction = async ({
   metadata = null,
   noteText = null,
 }) => {
+
   if (!callSessionId) {
   console.log("Call session missing");
 }
 
   try {
     const user = await getLoggedUser();
-    if (!user?.UserId || !user?.UserName) return;
 
+    if (!user?.UserId || !user?.UserName) return;
+console.log("✅ [CALL] Action logged", {
+  actionCode,
+  userId: user.UserId,
+  userName: user.UserName
+});
+      console.log("📡 [CALL] Log action", {
+  sessionId: callSessionId,
+  actionCode,
+  actionLabel,
+  reasonCode,
+  metadata,
+  userId: user.UserId,
+  userName: user.UserName
+});
     await fetch(`${BASE_URL}/api/activity/log`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -425,7 +459,9 @@ useEffect(() => {
 
 // 🔥 VISIT ACTIVITY SESSION
 const [visitSessionId, setVisitSessionId] = useState(null);
+const visitSessionRef = useRef(null);
 const startVisitSession = async () => {
+
   try {
     const user = await getLoggedUser();
 
@@ -433,7 +469,11 @@ const startVisitSession = async () => {
       Alert.alert("Error", "Login expired. Please login again.");
       return null;
     }
-
+  console.log("📡 [VISIT] Start session", {
+  userId: user.UserId,
+  userName: user.UserName,
+  loanAccountNumber
+});
     const res = await fetch(`${BASE_URL}/api/activity/session/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -449,7 +489,11 @@ const startVisitSession = async () => {
     });
 
     const data = await res.json();
-
+console.log("📦 [VISIT] Session created", {
+  sessionId: data.sessionId,
+  userId: user.UserId,
+  userName: user.UserName
+});
     const sessionId = (data.sessionId || data.SessionId)?.toString();
 
     if (!sessionId) {
@@ -457,14 +501,8 @@ const startVisitSession = async () => {
       return null;
     }
 
-    setVisitSessionId(sessionId);
-
-    // ⭐ SAVE SESSION GLOBALLY
-    await AsyncStorage.setItem(ACTIVE_VISIT_KEY, sessionId);
-    await AsyncStorage.setItem(
-      ACTIVE_VISIT_USER_KEY,
-      user.UserId.toString()
-    );
+    visitSessionRef.current = sessionId;
+setVisitSessionId(sessionId);
 
     return sessionId;
 
@@ -482,28 +520,35 @@ const logVisitAction = async ({
   sessionIdOverride = null
 }) => {
 
-let sessionIdToUse =
+const sessionIdToUse =
   sessionIdOverride ||
-  visitSessionId ||
-  await AsyncStorage.getItem(ACTIVE_VISIT_KEY);
+  visitSessionRef.current ||
+  visitSessionId;
 
-// silently skip if still missing (no log, no error)
-if (!sessionIdToUse) return;
+  if (!sessionIdToUse) {
+    console.log("⚠ Session missing");
+  }
 
   try {
+    
     const user = await getLoggedUser();
     if (!user?.UserId || !user?.UserName) return;
 
-    console.log("🚀 VISIT LOG SENDING:", {
-      actionCode,
-      sessionId: sessionIdToUse,
-    });
+console.log("📡 [VISIT] Log action", {
+  sessionId: sessionIdToUse,
+  actionCode,
+  actionLabel,
+  reasonCode,
+  metadata,
+  userId: user.UserId,
+  userName: user.UserName
+});
 
     await fetch(`${BASE_URL}/api/activity/log`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-       sessionId: sessionIdToUse,
+        sessionId: sessionIdToUse,
         actionCode,
         actionLabel,
         reasonCode,
@@ -520,19 +565,16 @@ if (!sessionIdToUse) return;
     console.error("Log visit action failed", err);
   }
 };
-const endVisitSession = async () => {
- let sessionIdToUse =
-  visitSessionId ||
-  await AsyncStorage.getItem(ACTIVE_VISIT_KEY);
 
-if (!sessionIdToUse) return;
+const endVisitSession = async () => {
+  if (!visitSessionId) return;
 
   try {
     await fetch(`${BASE_URL}/api/activity/session/end`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-       sessionId: sessionIdToUse
+        sessionId: visitSessionId
       }),
     });
 
@@ -540,11 +582,6 @@ if (!sessionIdToUse) return;
     console.error("End visit session failed", err);
   } finally {
     setVisitSessionId(null);
-
-    await AsyncStorage.removeItem(ACTIVE_VISIT_KEY);
-    await AsyncStorage.removeItem("ACTIVE_VISIT_SNO");
-    await AsyncStorage.removeItem("VISIT_START_TIME");
-    await AsyncStorage.removeItem("ACTIVE_VISIT_USER");
   }
 };
 
@@ -696,7 +733,14 @@ const handleModalBack = () => {
 };
 
 const { loanAccountNumber, openFlow, directCall, dialNumber } = route.params;
-
+useEffect(() => {
+  console.log("📥 [ACCOUNT_DETAILS] Screen opened", {
+    loanAccountNumber,
+    openFlow,
+    directCall,
+    dialNumber
+  });
+}, []);
 const [account, setAccount] = useState(null);
 const [loading, setLoading] = useState(true);
 
@@ -817,6 +861,9 @@ const exitToDPDList = async () => {
   }
 };
 const fetchAlternateNumbers = async () => {
+  console.log("📡 [ACCOUNT] Fetch alternates", {
+  loanAccountNumber
+});
   try {
     const res = await fetch(
       `${BASE_URL}/api/customer-numbers?accountNumber=${loanAccountNumber}`
@@ -836,6 +883,10 @@ const fetchAlternateNumbers = async () => {
         setAltNumber(numbers[numbers.length - 1]);
       }
     }
+    console.log("📦 [ACCOUNT] Alternates fetched", {
+  loanAccountNumber,
+  numbers
+});
   } catch (e) {
     console.log("alternate fetch error", e);
   }
@@ -843,6 +894,10 @@ const fetchAlternateNumbers = async () => {
   // ✅ VISIT START: capture location first then open visit modal
 // 🚀 MASTER START VISIT (TODAY + UNSCHEDULED USE SAME)
 const startVisitFlow = async () => {
+  console.log("🚶 [VISIT] Start visit flow", {
+  loanAccountNumber,
+  customerAddress
+});
   try {
 
     // ❌ No address at all
@@ -870,36 +925,30 @@ const startVisitFlow = async () => {
 {
   text: "Yes",
   onPress: async () => {
-
     setAddressConfirmed(true);
 
-    // ✅ ALWAYS SAVE (remove condition)
     const saved = await saveManualAddress();
     if (!saved) return;
 
+    // ✅ directly continue — do NOT call startVisitFlow again
+    proceedStartVisit();
   }
-
 }
         ]
       );
       return;
     }
 
-    // 🔽 YOUR EXISTING CODE (UNCHANGED BELOW)
-    setIsVisitFullScreen(false); 
-    setVisitStage("IDLE");
-    setShowVisitModal(true);
+  
 
     const sessionId = await startVisitSession();
     if (!sessionId) return;
 
-    setVisitSessionId(sessionId);
-
-    await AsyncStorage.setItem(ACTIVE_VISIT_KEY, sessionId);
-    await AsyncStorage.setItem(VISIT_START_TIME_KEY, Date.now().toString());
-
-    const user = await getLoggedUser();
-    await AsyncStorage.setItem(ACTIVE_VISIT_USER_KEY, user.UserId.toString());
+setVisitSessionId(sessionId);
+   // 🔽 YOUR EXISTING CODE (UNCHANGED BELOW)
+    setIsVisitFullScreen(false); 
+    setVisitStage("IDLE");
+    setShowVisitModal(true);
 
     const coords = await handleCaptureLocation();
     if (!coords) return;
@@ -916,7 +965,6 @@ const startVisitFlow = async () => {
     if (!sno) return;
 
     setCurrentVisitSNo(sno);
-    await AsyncStorage.setItem(ACTIVE_VISIT_SNO_KEY, sno.toString());
 
 await logVisitAction({
   actionCode: "VISIT_STARTED",
@@ -930,6 +978,55 @@ await logVisitAction({
     address: coords.address,
   },
 });
+
+
+  } catch (e) {
+    console.log("Start visit error:", e);
+    Alert.alert("Error", "Unable to start visit");
+  }
+};
+
+const proceedStartVisit = async () => {
+  try {
+
+
+    // ⭐ THEN start session
+    const sessionId = await startVisitSession();
+    if (!sessionId) return;
+
+    setVisitSessionId(sessionId);
+
+    setIsVisitFullScreen(false); 
+    setVisitStage("IDLE");
+    setShowVisitModal(true);
+
+    const coords = await handleCaptureLocation();
+    if (!coords) return;
+    setStartLocation({
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      accuracy: coords.accuracy,
+    });
+
+    setStartAddress(coords.address);
+
+    const sno = await saveStartLocationToDBAndReturnSNo();
+    if (!sno) return;
+
+    setCurrentVisitSNo(sno);
+
+    await logVisitAction({
+      actionCode: "VISIT_STARTED",
+      actionLabel: "Visit Started",
+      sessionIdOverride: sessionId.toString(),
+      metadata: {
+        sno,
+        startLat: coords.latitude,
+        startLng: coords.longitude,
+        accuracy: coords.accuracy,
+        address: coords.address,
+      },
+    });
 
   } catch (e) {
     console.log("Start visit error:", e);
@@ -1199,6 +1296,15 @@ onPress={async () => {
   </View>
 );
 const saveAlternateNumber = async () => {
+
+  const userStr = await AsyncStorage.getItem("LOGGED_USER");
+  const user = userStr ? JSON.parse(userStr) : null;
+
+  console.log("📡 [ACCOUNT] Save alternate", {
+    loanAccountNumber: account.loanAccountNumber,
+    alternateNumber: altNumber,
+    userName: user?.UserName
+  });
   if (!altNumber || altNumber.length !== 10) {
     Alert.alert("Invalid", "Alternate number must be 10 digits");
     return false;
@@ -1223,11 +1329,12 @@ const saveAlternateNumber = async () => {
     const res = await fetch(`${BASE_URL}/api/account/save-alternate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        loanAccountNumber: account.loanAccountNumber,
-        alternateNumber: altNumber,
-        addedBy: user?.UserName
-      }),
+    body: JSON.stringify({
+  loanAccountNumber: account.loanAccountNumber,
+  alternateNumber: altNumber,
+  addedBy: user?.UserName,
+  userId: user?.UserId
+}),
     });
 
     const data = await res.json();
@@ -1261,11 +1368,12 @@ const deleteAlternateNumber = async (number) => {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        loanAccountNumber: account.loanAccountNumber,
-        alternateNumber: number,
-        deletedBy: user?.UserName
-      }),
+    body: JSON.stringify({
+  loanAccountNumber: account.loanAccountNumber,
+  alternateNumber: number,
+  deletedBy: user?.UserName,
+  userId: user?.UserId
+}),
     });
 
     const data = await res.json();
@@ -1288,11 +1396,12 @@ const saveManualAddress = async () => {
     const res = await fetch(`${BASE_URL}/api/account/save-manual-address`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        loanAccountNumber: account.loanAccountNumber,
-        address: customerAddress,
-        userId: user.UserId
-      }),
+     body: JSON.stringify({
+  loanAccountNumber: account.loanAccountNumber,
+  address: customerAddress,
+  userId: user.UserId,
+  userName: user.UserName
+}),
     });
 
     if (!res.ok) {
@@ -1406,13 +1515,11 @@ useEffect(() => {
   return () => clearInterval(interval);
 
 }, []);
-useEffect(() => {
-  if (visitSessionId && !showVisitModal) {
-    setShowVisitModal(true);
-  }
-}, [visitSessionId]);
 
   const fetchAccountDetails = async () => {
+    console.log("📡 [ACCOUNT_DETAILS] Fetch account request", {
+  loanAccountNumber
+});
     try {
       const res = await fetch(`${BASE_URL}/api/account-details`, {
         method: "POST",
@@ -1421,6 +1528,10 @@ useEffect(() => {
       });
 
       const data = await res.json();
+      console.log("📦 [ACCOUNT_DETAILS] Account fetched", {
+  loanAccountNumber,
+  account: data?.account
+});
       setAccount(data.account);
       // ✅ ADDRESS PREFILL
 if (data.account?.FullAddress) {
@@ -1450,14 +1561,16 @@ fetchAlternateNumbers();
     }
   };
 const handleCaptureLocation = async () => {
-  const allowed = await requestLocationPermission();
-
-  if (!allowed) {
-    Alert.alert("Permission Required", "Please allow location permission.");
-    return null;
-  }
-
   try {
+    // ⭐ FIRST request permission
+    const granted = await requestLocationPermission();
+
+    if (!granted) {
+      Alert.alert("Location Error", "Location permission not granted");
+      return null;
+    }
+
+    // ⭐ THEN get GPS
     const position = await getCurrentLocation();
 
     const coords = {
@@ -1468,22 +1581,24 @@ const handleCaptureLocation = async () => {
 
     setCapturedLocation(coords);
 
-    // ✅ Fetch Human Readable Address (FREE)
-const address = await getAddressFromCoordsGoogle(
-  coords.latitude,
-  coords.longitude
-);
+    // ⭐ get address
+    const address = await getAddressFromCoordsGoogle(
+      coords.latitude,
+      coords.longitude
+    );
 
     setCapturedAddress(address);
-{/*}
-    Alert.alert(
-      "✅ Location Captured",
-      `Lat: ${coords.latitude}\nLng: ${coords.longitude}\nAccuracy: ${coords.accuracy}m\n\n📍 ${address}`
-    );
-*/}
+
+    console.log("📍 [LOCATION] Captured", {
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      address
+    });
+
     return { ...coords, address };
+
   } catch (err) {
-    Alert.alert("❌ Location Error", err.message);
+    Alert.alert("Location Error", err.message);
     return null;
   }
 };
@@ -1549,12 +1664,7 @@ const saveStartLocationToDB = async (coords) => {
   }
 };
 const captureStopLocation = async () => {
-  const allowed = await requestLocationPermission();
 
-  if (!allowed) {
-    Alert.alert("Permission Required", "Please allow location permission.");
-    return null;
-  }
 
   try {
     const position = await getCurrentLocation();
@@ -1581,6 +1691,9 @@ const address = await getAddressFromCoordsGoogle(
 };
 
 const handleCallNow = async () => {
+  console.log("📞 [CALL] Call now clicked", {
+  loanAccountNumber
+});
   try {
     if (!account) return;
 
@@ -1592,7 +1705,9 @@ const numbers = [
 ].filter((n, index, self) =>
   n && String(n).length === 10 && self.indexOf(n) === index
 );
-
+console.log("📦 [CALL] Dial numbers", {
+  numbers
+});
     if (numbers.length === 0) {
       Alert.alert("No Number", "No valid phone number available");
       return;
@@ -1636,6 +1751,26 @@ setShowCallModal(true);
       </View>
     );
   }
+// calculations
+const principalDue = Number(account.currentOutstandingBalance || 0);
+const interestDue = Number(account.principleDue || 0);
+const totalDue = principalDue + interestDue;
+const rate = Number(account.interestRate || 0);
+
+const today = new Date();
+const days = today.getDate();
+
+const formattedDate = today.toLocaleDateString("en-GB", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+
+const balanceInterest =
+  (totalDue * rate * (days / 365)) / 100;
+
+const totalPayable =
+  totalDue + balanceInterest;
 
   if (!account) {
     return (
@@ -1873,24 +2008,35 @@ setShowCallModal(true);
 
         {/* ===== LOAN DETAILS ===== */}
         <View style={styles.card}>
-          <DetailRow label="Loan A/c No." value={account.loanAccountNumber} />
-          <DetailRow label="Product" value={account.product} />
-          <DetailRow label="Principal Due" value={`₹${account.principleDue || 0}`} />
-          <DetailRow label="Interest Due" value={`₹${account.interestDue || 0}`} />
-          <DetailRow label="Total Due" value={`₹${account.OVERDUEAMT || 0}`} />
-          <DetailRow label="Interest Rate" value={`${account.interestRate || 0}%`} />
-         <DetailRow
-  label="Last Interest Applied Upto"
-  value={account.lastInterestAppliedDate || "-"}
-/>
+  <DetailRow label="Loan A/c No." value={account.loanAccountNumber} />
+  <DetailRow label="Product" value={account.product} />
 
+  <DetailRow label="Principal Due" value={`₹${principalDue.toFixed(2)}`} />
 
-          <DetailRow label="EMI Amount" value={`₹${account.EMIAMOUNT || 0}`} />
-          <DetailRow
-            label="Total Payable"
-            value={`₹${account.currentOutstandingBalance || 0}`}
-          />
-        </View>
+  <DetailRow label="Interest Due" value={`₹${interestDue.toFixed(2)}`} />
+
+  <DetailRow label="Total Due" value={`₹${totalDue.toFixed(2)}`} />
+
+  <DetailRow label="Interest Rate" value={`${rate}%`} />
+
+  <DetailRow
+    label="Last Interest Applied Upto"
+    value={account.lastInterestAppliedDate || "-"}
+  />
+
+  <DetailRow label="EMI Amount" value={`₹${account.EMIAMOUNT || 0}`} />
+
+  {/* NEW ROW */}
+  <DetailRow
+    label={`Balance Interest As on ${formattedDate}`}
+    value={`₹${balanceInterest.toFixed(2)}`}
+  />
+
+  <DetailRow
+    label="Total Payable"
+    value={`₹${totalPayable.toFixed(2)}`}
+  />
+</View>
 
         {/* ===== ACTION BUTTONS ===== */}
 {callStage === "IDLE" && !openFlow && (
@@ -4155,7 +4301,7 @@ if (!sno) {
 }
 
 if (!sno) {
-  Alert.alert("Error", "Visit session missing.");
+  Alert.alert("Take a Pause", "Click on Yes, Stop button again.");
   return;
 }
 
@@ -4196,13 +4342,7 @@ if (!sno) {
 
    // ✅ END VISIT SESSION
 await endVisitSession();
-
-// ✅ CLEAR ACTIVE VISIT STORAGE
-await AsyncStorage.removeItem(ACTIVE_VISIT_KEY);
-await AsyncStorage.removeItem(VISIT_START_TIME_KEY);
-await AsyncStorage.removeItem(ACTIVE_VISIT_SNO_KEY);
-await AsyncStorage.removeItem(ACTIVE_VISIT_USER_KEY);
-
+visitSessionRef.current = null;
 setVisitSessionId(null);
 
 // 5️⃣ Success alert

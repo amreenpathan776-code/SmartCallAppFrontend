@@ -14,9 +14,8 @@ Geolocation.setRNConfiguration({
   authorizationLevel: "whenInUse",
 });
 
-
 // ⭐ GOOGLE API KEY (single place only)
-const GOOGLE_API_KEY = "AIzaSyBU8cG2UuNw7i-6m7azb1cUIiNgX0DJ4KA"
+const GOOGLE_API_KEY = "AIzaSyBU8cG2UuNw7i-6m7azb1cUIiNgX0DJ4KA";
 
 // ===============================
 // LOCATION PERMISSION
@@ -48,6 +47,9 @@ export const requestLocationPermission = async () => {
   }
 };
 
+// ===============================
+// GET CURRENT LOCATION
+// ===============================
 export const getCurrentLocation = () => {
   return new Promise((resolve, reject) => {
     Geolocation.getCurrentPosition(
@@ -63,7 +65,6 @@ export const getCurrentLocation = () => {
     );
   });
 };
-
 
 // ===============================
 // GOOGLE REVERSE GEOCODING
@@ -82,7 +83,7 @@ export const getAddressFromCoordsGoogle = async (lat, lng) => {
 
     return "Address not found";
   } catch (error) {
-    console.log("Google Geocoding Error:", error);
+    console.log("Reverse geocode error:", error);
     return "Unable to fetch address";
   }
 };
@@ -105,10 +106,11 @@ export const getDistanceKmGoogle = async (origin, destination) => {
 
     return null;
   } catch (error) {
-    console.log("Distance API Error:", error);
+    console.log("Distance API error:", error);
     return null;
   }
 };
+
 // ===============================
 // ADDRESS → LAT/LNG (FORWARD GEOCODING)
 // ===============================

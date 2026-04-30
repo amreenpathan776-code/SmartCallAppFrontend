@@ -13,7 +13,7 @@ export default function LeadFormScreen({ navigation, route }) {
   const nav = useNavigation();
 
   const { type } = route.params;
-
+console.log("📱 [LEAD_FORM] Screen opened", { type });
   const [leadName, setLeadName] = useState("");
   const [mobile, setMobile] = useState("");
   const [address, setAddress] = useState("");
@@ -93,19 +93,24 @@ const handlePincodeChange = (text) => {
     setPincode(cleaned);
   }
 };
-
 const saveLead = async () => {
+console.log("💾 [LEAD_FORM] Save clicked");
   try {
 // ================= VALIDATION =================
-
-// Required fields
 if (!leadName || !mobile || !productCategory || !product || !leadType) {
+  console.log("⚠️ [LEAD_FORM] Required fields missing", {
+    leadName,
+    mobile,
+    productCategory,
+    product,
+    leadType
+  });
   alert("Please fill all mandatory fields");
   return;
 }
-
 // 🇮🇳 Mobile validation
 const mobileRegex = /^[6-9]\d{9}$/;
+console.log("⚠️ [LEAD_FORM] Invalid mobile", mobile);
 if (!mobileRegex.test(mobile)) {
   alert("Enter valid Indian mobile number (10 digits starting with 6-9)");
   return;
@@ -113,6 +118,7 @@ if (!mobileRegex.test(mobile)) {
 
 // 📮 Pincode validation (only if entered)
 if (pincode && !/^\d{6}$/.test(pincode)) {
+  console.log("⚠️ [LEAD_FORM] Invalid pincode", pincode);
   alert("Pincode must be exactly 6 digits");
   return;
 }
@@ -120,7 +126,10 @@ if (pincode && !/^\d{6}$/.test(pincode)) {
     // ⭐ get logged user from AsyncStorage (same as visit screen)
     const userStr = await AsyncStorage.getItem("LOGGED_USER");
     const user = JSON.parse(userStr);
-
+console.log("👤 [LEAD_FORM] Logged user", {
+  userId: user?.UserId,
+  userName: user?.UserName
+});
     const payload = {
       BranchCode: user?.BranchCode || "001",
       BranchName: user?.BranchName || "Main Branch",
@@ -139,7 +148,11 @@ if (pincode && !/^\d{6}$/.test(pincode)) {
       SelectLeadType: leadType
     };
 
-    console.log("Sending Lead →", payload);
+console.log("📤 [LEAD_FORM] Sending lead", {
+  userId: user?.UserId,
+  userName: user?.UserName,
+  payload
+});
 
     const res = await fetch(`${BASE_URL}/api/saveLead`, {
       method: "POST",
@@ -149,17 +162,29 @@ if (pincode && !/^\d{6}$/.test(pincode)) {
       body: JSON.stringify(payload)
     });
 
-    const data = await res.json();
+console.log("🌐 [LEAD_FORM] API status", {
+  userId: user?.UserId,
+  userName: user?.UserName,
+  status: res.status
+});
 
+    const data = await res.json();
+console.log("📥 [LEAD_FORM] API response", {
+  userId: user?.UserId,
+  userName: user?.UserName,
+  response: data
+});
     if (data.success) {
+      console.log("✅ [LEAD_FORM] Lead saved");
       alert("Lead Saved Successfully 🎉");
       navigation.goBack();
     } else {
+      console.log("❌ [LEAD_FORM] Save failed");
       alert("Failed to save lead");
     }
 
   } catch (error) {
-    console.log(error);
+    console.log("❌ [LEAD_FORM] Save error", error?.message);
     alert("Server error while saving lead");
   }
 };
@@ -184,7 +209,12 @@ if (pincode && !/^\d{6}$/.test(pincode)) {
 
       {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity 
+        onPress={() => {
+  console.log("⬅️ [LEAD_FORM] Back pressed");
+  navigation.goBack();
+}}
+>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
@@ -192,6 +222,7 @@ if (pincode && !/^\d{6}$/.test(pincode)) {
         </Text>
 <TouchableOpacity
   onPress={async () => {
+    console.log("🏠 [LEAD_FORM] Home clicked");
     const saved = await AsyncStorage.getItem("LOGGED_USER");
     const user = saved ? JSON.parse(saved) : null;
 
@@ -229,7 +260,11 @@ if (pincode && !/^\d{6}$/.test(pincode)) {
           <DropdownField
             value={dob}
             placeholder="Select Date of Birth"
-            onPress={()=>{ setTempSelectedDate(""); setShowCalendar(true); }}
+            onPress={()=>{
+  console.log("📅 [LEAD_FORM] DOB calendar opened");
+  setTempSelectedDate("");
+  setShowCalendar(true);
+}}
             onReset={()=>setDob("")}
           />
 

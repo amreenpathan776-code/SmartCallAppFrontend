@@ -41,9 +41,22 @@ const [minute, setMinute] = useState("00");
 const [ampm, setAmpm] = useState("AM");
 const [productOtherSubmitted, setProductOtherSubmitted] = useState(false);
 const [notInterestedOtherSubmitted, setNotInterestedOtherSubmitted] = useState(false);
-  useEffect(() => {
-    fetchLeadDetails();
-  }, []);
+useEffect(() => {
+  const loadUserAndFetch = async () => {
+    const saved = await AsyncStorage.getItem("LOGGED_USER");
+    const user = saved ? JSON.parse(saved) : null;
+
+    console.log("📥 [LEAD_DETAILS] Screen opened", {
+      leadId: lead?.SNo,
+      userId: user?.UserId,
+      userName: user?.UserName || user?.name
+    });
+
+    fetchLeadDetails(user);
+  };
+
+  loadUserAndFetch();
+}, []);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
@@ -71,18 +84,41 @@ const resetFlow = () => {
   setProductOtherSubmitted(false); // add this
 };
 
-  const fetchLeadDetails = async () => {
+const fetchLeadDetails = async (user) => {
     try {
-      const res = await fetch(`${BASE_URL}/api/getLeadDetails/${lead.SNo}`);
-      const data = await res.json();
-      if (data.success) setLeadDetails(data.lead);
-    } catch {
-      Alert.alert("Error fetching lead details");
-    }
-  };
+console.log("📊 [LEAD_DETAILS] Fetching lead details", {
+  leadId: lead?.SNo,
+  userId: user?.UserId,
+  userName: user?.UserName || user?.name
+});
+const res = await fetch(
+  `${BASE_URL}/api/getLeadDetails/${lead.SNo}?userId=${user?.UserId}&userName=${user?.UserName || user?.name}`
+);
+    const data = await res.json();
+console.log("📦 [LEAD_DETAILS] fetched data", {
+  leadId: lead?.SNo,
+  userId: user?.UserId,
+  userName: user?.UserName || user?.name,
+  data
+});
+
+
+    if (data.success) setLeadDetails(data.lead);
+  } catch (e) {
+    console.log("❌ [LEAD_DETAILS] fetch error", e);
+    Alert.alert("Error fetching lead details");
+  }
+};
 const startCallSession = async () => {
+
   const saved = await AsyncStorage.getItem("LOGGED_USER");
   const user = saved ? JSON.parse(saved) : null;
+
+    console.log("📞 [LEAD_DETAILS] Starting call session", {
+  leadId: lead?.SNo,
+  userId: user?.UserId,
+  userName: user?.UserName || user?.name
+});
 
   if (!user?.UserId) {
     Alert.alert("Session expired");
@@ -107,6 +143,7 @@ const startCallSession = async () => {
   setCallSessionId(data.sessionId);
   return data.sessionId;
 };
+
 const logCallAction = async ({
   actionCode,
   actionLabel,
@@ -114,11 +151,18 @@ const logCallAction = async ({
   metadata = null,
   noteText = null,
 }) => {
+
   if (!callSessionId) return;
 
   const saved = await AsyncStorage.getItem("LOGGED_USER");
   const user = saved ? JSON.parse(saved) : null;
-
+console.log("📝 [LEAD_DETAILS] Logging action", {
+  leadId: lead?.SNo,
+  userId: user?.UserId,
+  userName: user?.UserName || user?.name,
+  actionCode,
+  actionLabel
+});
   await fetch(`${BASE_URL}/api/activity/log`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -138,13 +182,24 @@ const logCallAction = async ({
   });
 };
 const handleCall = async () => {
+
+  const saved = await AsyncStorage.getItem("LOGGED_USER");
+  const user = saved ? JSON.parse(saved) : null;
+
+  console.log("📞 [LEAD_DETAILS] Call button pressed", {
+    leadId: lead?.SNo,
+    userId: user?.UserId,
+    userName: user?.UserName || user?.name
+  });
+
   if (!leadDetails?.MobileNumber) {
     Alert.alert("No Number Available");
     return;
   }
 
-  // 🔥 OPEN DIAL FIRST (do not wait for backend)
+  // 🔥 OPEN DIAL FIRST
   setOpenAfterDial(true);
+  console.log("📱 [LEAD_DETAILS] Dial opened");
   Linking.openURL(`tel:${leadDetails.MobileNumber}`);
 
   try {
@@ -162,6 +217,9 @@ const handleCall = async () => {
   }
 };
 const closeAndExit = async () => {
+  console.log("🚪 [LEAD_DETAILS] Closing call flow", {
+  sessionId: callSessionId
+});
   if (callSessionId) {
     await fetch(`${BASE_URL}/api/activity/session/end`, {
       method: "POST",

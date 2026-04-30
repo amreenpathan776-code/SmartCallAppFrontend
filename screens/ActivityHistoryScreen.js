@@ -16,7 +16,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function ActivityHistoryScreen({ route, navigation }) {
   const { userId } = route.params;
-
+const [userName, setUserName] = useState("");
   const today = new Date().toISOString().split("T")[0];
 const [historyType, setHistoryType] = useState("ALL");
 // BOTH | NPA | LEAD
@@ -40,11 +40,39 @@ const formatDisplayDate = (dateStr) => {
   const [year, month, day] = dateStr.split("-");
   return `${day}/${month}/${year}`;
 };
-  useEffect(() => {
-    fetchHistory(today, today, "");
-  }, []);
+useEffect(() => {
+  const loadUser = async () => {
+    const saved = await AsyncStorage.getItem("LOGGED_USER");
+    const user = saved ? JSON.parse(saved) : null;
 
-const fetchHistory = async (fDate, tDate, search, typeValue = historyType) => {
+    if (user) {
+      setUserName(user.UserName);
+
+      console.log("📱 [ACTIVITY_HISTORY] Screen loaded", {
+        userId,
+        userName: user.UserName
+      });
+
+      fetchHistory(today, today, "", historyType, user.UserName);
+    }
+  };
+
+  loadUser();
+}, []);
+
+const fetchHistory = async (
+  fDate,
+  tDate,
+  search,
+  typeValue = historyType,
+  uName = userName
+) => {
+  console.log("📡 [ACTIVITY_HISTORY] Fetch history", {
+  from: fDate,
+  to: tDate,
+  search,
+  type: typeValue
+});
       setLoading(true);
 
     try {
@@ -53,18 +81,25 @@ const fetchHistory = async (fDate, tDate, search, typeValue = historyType) => {
         headers: { "Content-Type": "application/json" },
 body: JSON.stringify({
   userId,
+  userName: uName,
   fromDate: fDate,
   toDate: tDate,
   searchText: search,
-  type: typeValue,  // 👈 use passed value
+  type: typeValue,
 }),
       });
 
       const result = await res.json();
       setData(result.records || []);
       setCount(result.count || 0);
+console.log("📦 [ACTIVITY_HISTORY] Data fetched", {
+  userId,
+  userName: uName,
+  count: result.count || 0,
+  data: result.records || []
+});
     } catch (err) {
-      console.log(err);
+    console.log("❌ [ACTIVITY_HISTORY] Fetch error", err?.message);
     }
 
     setLoading(false);
@@ -72,7 +107,12 @@ body: JSON.stringify({
 
   // 🔥 APPLY FILTERS (Correct Till Date Logic)
 const applyFilters = () => {
-
+console.log("🎯 [ACTIVITY_HISTORY] Apply filters", {
+  mode,
+  tempFromDate,
+  tempToDate,
+  searchText
+});
   const todayDate = new Date().toISOString().split("T")[0];
 
   let finalFrom = null;
@@ -106,6 +146,7 @@ const applyFilters = () => {
 
   // 🔥 CLEAR (Fixed Properly)
   const clearFilter = () => {
+    console.log("🧹 [ACTIVITY_HISTORY] Clear filters");
     const todayDate = new Date().toISOString().split("T")[0];
 
     setSearchText("");
@@ -120,13 +161,18 @@ const applyFilters = () => {
 
   const renderItem = ({ item }) => (
     <TouchableOpacity
-      onPress={() =>
-        navigation.navigate("ActivityHistoryDetails", {
-          userId,
-          loanAccountNumber: item.LoanAccountNumber,
-          customerName: item.CustomerName,
-        })
-      }
+onPress={() => {
+  console.log("➡️ [ACTIVITY_HISTORY] Activity clicked", {
+    account: item.LoanAccountNumber,
+    type: item.SourceType,
+  });
+
+  navigation.navigate("ActivityHistoryDetails", {
+    userId,
+    loanAccountNumber: item.LoanAccountNumber,
+    customerName: item.CustomerName,
+  });
+}}
     >
       <View style={styles.card}>
         <View style={styles.nameRow}>
@@ -214,6 +260,7 @@ const applyFilters = () => {
   <TouchableOpacity
     onPress={() => {
       Keyboard.dismiss();
+      console.log("📅 [ACTIVITY_HISTORY] Calendar opened");
       setMode("ON_DATE");
       setShowCalendar(true);
     }}
@@ -246,23 +293,25 @@ const applyFilters = () => {
 </View>
 
       {/* SEARCH BAR */}
-      <View style={styles.searchBox}>
-        <TextInput
-          style={{ flex: 1 }}
-          placeholder="Search Account / Name / DPD"
-          value={searchText}
-          onChangeText={setSearchText}
-        />
+    <View style={styles.searchBox}>
+  <TextInput
+    style={styles.searchInput}
+    placeholder="Search Account / Name / DPD"
+    placeholderTextColor="#888"
+    value={searchText}
+    onChangeText={setSearchText}
+  />
 
         <TouchableOpacity
-  onPress={() => {
+onPress={() => {
+  console.log("🔍 [ACTIVITY_HISTORY] Search clicked", { searchText });
   Keyboard.dismiss();
 
   if (!searchText.trim()) return;
 
-  // 🔥 Search across ALL dates
-  fetchHistory(null, null, searchText);
-}} 
+  // search using current filters
+  fetchHistory(fromDate, toDate, searchText, historyType);
+}}
           
         >
           <Ionicons name="search" size={22} color="#0a3d62" />
@@ -278,6 +327,7 @@ const applyFilters = () => {
         historyType === item && styles.tabActive,
       ]}
       onPress={() => {
+  console.log("📂 [ACTIVITY_HISTORY] Type changed", item);
   setHistoryType(item);
   fetchHistory(fromDate, toDate, searchText, item);
 }}
@@ -509,7 +559,11 @@ const styles = StyleSheet.create({
     height: 48,
     elevation: 2,
   },
-
+searchInput: {
+  flex: 1,
+  color: "#000",
+  fontSize: 14,
+},
   /* COUNT BAR */
   countBar: {
     flexDirection: "row",

@@ -19,7 +19,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function TodayScheduleList({ route, navigation }) {
   const { userId, type } = route.params; // type = CALL / VISIT
-
+  const [loggedUser, setLoggedUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
@@ -27,6 +27,14 @@ export default function TodayScheduleList({ route, navigation }) {
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchTodaySchedules = async () => {
+    const saved = await AsyncStorage.getItem("LOGGED_USER");
+const user = saved ? JSON.parse(saved) : null;
+setLoggedUser(user);
+    console.log("📥 [TODAY_SCHEDULE] Fetch request", {
+  userId,
+  userName: loggedUser?.UserName,
+  type
+});
     try {
       setLoading(true);
 
@@ -41,24 +49,36 @@ export default function TodayScheduleList({ route, navigation }) {
 
       setRecords(list);
       setFilteredData(list);
+      console.log("📦 [TODAY_SCHEDULE] fetched data", {
+  userId,
+  userName: loggedUser?.UserName,
+  records: list
+});
+      console.log("✅ [TODAY_SCHEDULE] Schedules loaded", {
+  count: list.length,
+  type
+});
     } catch (err) {
-      console.log("❌ Today schedule list error:", err);
+     console.log("❌ [TODAY_SCHEDULE] Fetch error", err?.message);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchTodaySchedules();
-  }, []);
+useEffect(() => {
+  console.log("📥 [TODAY_SCHEDULE] Screen loaded", { userId, type });
+  fetchTodaySchedules();
+}, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchTodaySchedules(); // ✅ auto refresh when back
-    }, [])
-  );
+useFocusEffect(
+  useCallback(() => {
+    console.log("📱 [TODAY_SCHEDULE] Screen focused", { type });
+    fetchTodaySchedules();
+  }, [])
+);
 
   const onRefresh = async () => {
+    console.log("🔄 [TODAY_SCHEDULE] Pull to refresh");
     setRefreshing(true);
     await fetchTodaySchedules();
     setRefreshing(false);
@@ -66,6 +86,7 @@ export default function TodayScheduleList({ route, navigation }) {
 
   // ✅ SEARCH (same like dpdlist)
   const handleSearch = (text) => {
+    console.log("🔍 [TODAY_SCHEDULE] Search", text);
     setSearchText(text);
 
     if (text.trim() === "") {
@@ -137,6 +158,13 @@ export default function TodayScheduleList({ route, navigation }) {
               style={styles.iconBtn}
               activeOpacity={0.7}
               onPress={() => {
+console.log("📞 [TODAY_SCHEDULE] Call clicked", {
+  account: item.LoanAccountNumber,
+  userId,
+  userName: loggedUser?.UserName
+});
+
+  // ✅ COMPLETED: block click
                 // ✅ COMPLETED: block click
                 if (isCompleted) {
                   Alert.alert(
@@ -173,7 +201,14 @@ export default function TodayScheduleList({ route, navigation }) {
             <TouchableOpacity
               style={styles.iconBtn}
               activeOpacity={0.7}
-              onPress={() => {
+             onPress={() => {
+console.log("📍 [TODAY_SCHEDULE] Visit clicked", {
+  account: item.LoanAccountNumber,
+  userId,
+  userName: loggedUser?.UserName
+});
+
+  // ✅ COMPLETED: block click
                 // ✅ COMPLETED: block click
                 if (isCompleted) {
                   Alert.alert(
@@ -304,7 +339,12 @@ const groupByDate = (data) => {
       {/* HEADER */}
      <View style={styles.header}>
   {/* BACK BUTTON */}
-  <TouchableOpacity onPress={() => navigation.goBack()}>
+  <TouchableOpacity 
+  onPress={() => {
+  console.log("⬅️ [TODAY_SCHEDULE] Back pressed");
+  navigation.goBack();
+}}
+>
     <Ionicons name="arrow-back" size={24} color="#fff" />
   </TouchableOpacity>
 
@@ -316,6 +356,7 @@ const groupByDate = (data) => {
   {/* HOME BUTTON */}
   <TouchableOpacity
     onPress={async () => {
+      console.log("🏠 [TODAY_SCHEDULE] Home clicked");
       const saved = await AsyncStorage.getItem("LOGGED_USER");
       const user = saved ? JSON.parse(saved) : null;
 

@@ -13,27 +13,59 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function ActivityHistoryDetailsScreen({ route, navigation }) {
   const { userId, loanAccountNumber, customerName } = route.params;
-
+ const [userName, setUserName] = useState("");
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchDetails();
-  }, []);
+useEffect(() => {
+  const loadUser = async () => {
+    const saved = await AsyncStorage.getItem("LOGGED_USER");
+    const user = saved ? JSON.parse(saved) : null;
 
-  const fetchDetails = async () => {
+    if (user) {
+      setUserName(user.UserName);
+
+      console.log("📱 [ACTIVITY_DETAILS] Screen loaded", {
+        userId,
+        userName: user.UserName,
+        account: loanAccountNumber
+      });
+
+      fetchDetails(user.UserName);
+    }
+  };
+
+  loadUser();
+}, []);
+
+  const fetchDetails = async (uName = userName) => {
+    console.log("📡 [ACTIVITY_DETAILS] Fetching details", {
+  userId,
+  account: loanAccountNumber
+});
     try {
       const res = await fetch(`${BASE_URL}/api/activity/history-details`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, loanAccountNumber }),
+      body: JSON.stringify({
+  userId,
+  userName: uName,
+  loanAccountNumber
+}),
       });
 
       const result = await res.json();
       setData(result.records || []);
+console.log("📦 [ACTIVITY_DETAILS] Data fetched", {
+  userId,
+  userName: uName,
+  account: loanAccountNumber,
+  count: result.records?.length || 0,
+  data: result.records || []
+});
       setLoading(false);
     } catch (err) {
-      console.log("Detail fetch error:", err);
+     console.log("❌ [ACTIVITY_DETAILS] Fetch error", err?.message);
       setLoading(false);
     }
   };
@@ -79,7 +111,11 @@ const scheduleTime =
       {/* Header */}
    <View style={styles.header}>
   {/* BACK BUTTON */}
-  <TouchableOpacity onPress={() => navigation.goBack()}>
+  <TouchableOpacity 
+  onPress={() => {
+  console.log("⬅️ [ACTIVITY_DETAILS] Back pressed");
+  navigation.goBack();
+}}>
     <Ionicons name="arrow-back" size={24} color="#fff" />
   </TouchableOpacity>
 
@@ -89,6 +125,7 @@ const scheduleTime =
   {/* HOME BUTTON */}
   <TouchableOpacity
     onPress={async () => {
+      console.log("🏠 [ACTIVITY_DETAILS] Home clicked");
       const saved = await AsyncStorage.getItem("LOGGED_USER");
       const user = saved ? JSON.parse(saved) : null;
 

@@ -124,6 +124,7 @@ Alert.alert("Success", "Registration completed successfully", [
       <TextInput
         style={styles.input}
         placeholder="User ID"
+         placeholderTextColor="#888"
         value={userId}
         onChangeText={setUserId}
       />
@@ -132,6 +133,7 @@ Alert.alert("Success", "Registration completed successfully", [
   <TextInput
     style={styles.passwordInput}
     placeholder="Password"
+     placeholderTextColor="#888"
     secureTextEntry={!showPassword}
     value={password}
     onChangeText={setPassword}
@@ -150,6 +152,7 @@ Alert.alert("Success", "Registration completed successfully", [
   <TextInput
     style={styles.passwordInput}
     placeholder="MPIN (4 digits)"
+     placeholderTextColor="#888"
     secureTextEntry={!showMpin}
     keyboardType="numeric"
     maxLength={4}
@@ -168,17 +171,28 @@ Alert.alert("Success", "Registration completed successfully", [
   </TouchableOpacity>
 </View>
 
-      <View style={styles.pickerContainer}>
-        <Picker selectedValue={securityQ} onValueChange={(v) => setSecurityQ(v)}>
-          {securityQuestions.map((q) => (
-            <Picker.Item key={q.value} label={q.label} value={q.value} />
-          ))}
-        </Picker>
-      </View>
+    <View style={styles.pickerContainer}>
+  <Picker
+    selectedValue={securityQ}
+    onValueChange={(v) => setSecurityQ(v)}
+    style={styles.picker}
+    dropdownIconColor="#000"
+  >
+    {securityQuestions.map((q) => (
+      <Picker.Item
+        key={q.value}
+        label={q.label}
+        value={q.value}
+        color="#000"
+      />
+    ))}
+  </Picker>
+</View>
 
       <TextInput
         style={styles.input}
         placeholder="Security Answer"
+         placeholderTextColor="#888"
         value={securityA}
         onChangeText={setSecurityA}
       />
@@ -215,19 +229,32 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: "center",
   },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  pickerContainer: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    marginBottom: 12,
-  },
+input: {
+  borderWidth: 1,
+  borderColor: "#ccc",
+  borderRadius: 8,
+  padding: 12,
+  marginBottom: 12,
+  color: "#000",
+  backgroundColor: "#fff",
+},
+
+passwordInput: {
+  flex: 1,
+  paddingVertical: 12,
+  color: "#000",
+},
+pickerContainer: {
+  borderWidth: 1,
+  borderColor: "#ccc",
+  borderRadius: 8,
+  marginBottom: 12,
+  backgroundColor: "#fff",
+},
+
+picker: {
+  color: "#000",
+},
   button: {
     backgroundColor: "#0a3d62",
     padding: 15,
@@ -248,11 +275,6 @@ const styles = StyleSheet.create({
   borderRadius: 8,
   paddingHorizontal: 10,
   marginBottom: 12,
-},
-
-passwordInput: {
-  flex: 1,
-  paddingVertical: 12,
 },
 loginText: {
   marginTop: 15,

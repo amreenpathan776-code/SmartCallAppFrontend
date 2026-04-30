@@ -1,4 +1,4 @@
 // config.js
-const BASE_URL = "http://40.80.79.26:5001"; 
+const BASE_URL = "https://mobile.coastal.bank.in:5001"; 
 
 export default BASE_URL;

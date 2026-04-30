@@ -15,39 +15,49 @@ export default function MarketingLeadsScreen({ navigation }) {
   const [leadStatus,setLeadStatus] = useState({});
 
   // ⭐ FETCH LEADS WHEN SCREEN OPENS
-  useFocusEffect(
-    React.useCallback(() => {
-      fetchLeads();
-    }, [])
-  );
+useFocusEffect(
+  React.useCallback(() => {
+    console.log("📱 [LEADS] Screen focused");
+    fetchLeads();
+  }, [])
+);
 
-  const fetchLeads = async () => {
-    try {
-      const saved = await AsyncStorage.getItem("LOGGED_USER");
-      const user = JSON.parse(saved);
+const fetchLeads = async () => {
+  try {
+    const saved = await AsyncStorage.getItem("LOGGED_USER");
+    const user = JSON.parse(saved);
 
-      const res = await fetch(`${BASE_URL}/api/getMyLeads/${user.UserId}`);
-      const data = await res.json();
+    console.log("📡 [LEADS] Fetching leads", {
+      userId: user?.UserId,
+      userName: user?.UserName
+    });
 
-      if (data.success){
+    const res = await fetch(`${BASE_URL}/api/getMyLeads/${user.UserId}`);
+    const data = await res.json();
 
-setLeads(data.leads);
+    console.log("📦 [LEADS] Raw leads response", data);
 
-fetchLeadStatus(user.UserId);
+    if (data.success) {
+      setLeads(data.leads);
 
-}
-    } catch (err) {
-      console.log(err);
-      alert("Failed to load leads");
+      console.log("✅ [LEADS] Leads loaded", {
+        count: data.leads?.length || 0
+      });
+
+      fetchLeadStatus(user.UserId);
     }
-  };
-const fetchLeadStatus = async(userId)=>{
 
+  } catch (err) {
+    console.log("❌ [LEADS] fetch error", err?.message);
+  }
+};
+const fetchLeadStatus = async(userId)=>{
+console.log("📡 [LEADS] Fetching status", { userId });
 try{
 
 const res = await fetch(`${BASE_URL}/api/leads/status/${userId}`);
 const data = await res.json();
-
+console.log("📦 [LEADS] Raw status response", data);
 const map = {};
 
 data.forEach(row=>{
@@ -79,10 +89,13 @@ map[row.SNo]=status;
 });
 
 setLeadStatus(map);
-
+console.log("📦 [LEADS] Status map stored", map);
+console.log("✅ [LEADS] Lead status mapped", {
+  count: Object.keys(map).length
+});
 }catch(err){
 
-console.log("status fetch error",err);
+console.log("❌ [LEADS] fetchLeads error", err?.message);
 
 }
 
@@ -92,9 +105,13 @@ const renderLead = ({ item }) => (
  <TouchableOpacity
   style={styles.card}
   activeOpacity={0.9}
-  onPress={() => {
+ onPress={() => {
+  console.log("➡️ [LEADS] Lead clicked", {
+    sno: item.SNo,
+    status: leadStatus[item.SNo]
+  });
 
-    if(leadStatus[item.SNo] === "COMPLETED"){
+  if(leadStatus[item.SNo] === "COMPLETED"){
       alert("This lead is already completed");
       return;
     }
@@ -167,7 +184,12 @@ Attempt No : {item.AttemptCount || 0}
 
       {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity 
+        onPress={() => {
+  console.log("⬅️ [LEADS] Back pressed");
+  navigation.goBack();
+}}
+          >
           <Ionicons name="arrow-back" size={24} color="#fff"/>
         </TouchableOpacity>
 
@@ -175,8 +197,13 @@ Attempt No : {item.AttemptCount || 0}
 
         <TouchableOpacity
           onPress={async () => {
+            console.log("🏠 [LEADS] Home clicked");
             const saved = await AsyncStorage.getItem("LOGGED_USER");
             const user = JSON.parse(saved);
+            console.log("👤 [LEADS] Logged user", {
+userId: user?.UserId,
+userName: user?.UserName || user?.name
+});
             nav.reset({ index:0, routes:[{name:"Home", params:{user}}] });
           }}>
           <Ionicons name="home" size={24} color="#fff"/>
@@ -185,14 +212,19 @@ Attempt No : {item.AttemptCount || 0}
 
       {/* LIST */}
       <FlatList
-        data={leads}
+  data={leads || []}
         keyExtractor={(item,index)=>index.toString()}
         renderItem={renderLead}
         contentContainerStyle={{padding:12}}
       />
 
       {/* FAB */}
-      <TouchableOpacity style={styles.fab} onPress={()=>setLeadTypeModal(true)}>
+      <TouchableOpacity style={styles.fab} 
+      onPress={()=>{
+  console.log("➕ [LEADS] FAB clicked");
+  setLeadTypeModal(true);
+}}
+>
         <Ionicons name="add" size={30} color="#fff"/>
       </TouchableOpacity>
 
@@ -205,6 +237,7 @@ Attempt No : {item.AttemptCount || 0}
 
             <TouchableOpacity style={styles.modalBtn}
               onPress={()=>{
+                console.log("🧾 [LEADS] Known lead selected");
                 setLeadTypeModal(false);
                 navigation.navigate("LeadForm", { type: "Known Lead" });
 
@@ -214,6 +247,7 @@ Attempt No : {item.AttemptCount || 0}
 
             <TouchableOpacity style={styles.modalBtn}
               onPress={()=>{
+                console.log("❓ [LEADS] Unknown lead selected");
                 setLeadTypeModal(false);
                 navigation.navigate("LeadForm", { type: "Unknown Lead" });
 

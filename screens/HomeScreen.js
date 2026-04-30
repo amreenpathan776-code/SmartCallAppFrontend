@@ -28,6 +28,7 @@ const [scheduleCounts, setScheduleCounts] = useState({
   visit: { pending: 0, completed: 0 },
 });
 const loadHomeData = async () => {
+  console.log("📊 [HOME] Loading home data");
   try {
     await fetchHomeSummary();
     await fetchScheduleSummary();
@@ -36,6 +37,7 @@ const loadHomeData = async () => {
   }
 };
 const onRefresh = async () => {
+  console.log("🔄 [HOME] Pull to refresh triggered");
   setRefreshing(true);
   await loadHomeData();
   setRefreshing(false);
@@ -50,8 +52,13 @@ const employee = {
   branchName: user?.BranchName || "",
   branchCode: user?.BranchCode || "",
 };
-console.log("LOGGED IN USER:", user);
+console.log("👤 [HOME] Screen loaded for user:", user?.UserId);
 const fetchHomeSummary = async () => {
+  console.log("📡 [HOME] Fetching members summary", {
+    userId: user?.UserId,
+    userName: user?.UserName
+  });
+
   try {
     setLoadingSummary(true);
 
@@ -67,7 +74,36 @@ const fetchHomeSummary = async () => {
     );
 
     const data = await res.json();
+
+    console.log("📦 [HOME] Members summary fetched", {
+      userId: user?.UserId,
+      data
+    });
+
     setHomeSummary(data);
+console.log("📊 [HOME] Assigned counts", {
+  userId: user?.UserId,
+  userName: user?.UserName,
+
+  membersPending: data?.members?.pending || 0,
+  membersInProcess: data?.members?.inProcess || 0,
+  membersCompleted: data?.members?.completed || 0,
+
+  marketingPending: data?.marketing?.pending || 0,
+  marketingInProcess: data?.marketing?.inProcess || 0,
+  marketingCompleted: data?.marketing?.completed || 0,
+
+  npaPending: data?.npa?.pending || 0,
+  npaInProcess: data?.npa?.inProcess || 0,
+  npaCompleted: data?.npa?.completed || 0,
+
+  welcomePending: data?.welcome?.pending || 0,
+  welcomeInProcess: data?.welcome?.inProcess || 0,
+  welcomeCompleted: data?.welcome?.completed || 0
+});
+    console.log("✅ [HOME] Members summary loaded", {
+      userId: user?.UserId
+    });
 
   } catch (err) {
     console.error("❌ Home summary fetch failed", err);
@@ -75,8 +111,12 @@ const fetchHomeSummary = async () => {
     setLoadingSummary(false);
   }
 };
-
 const fetchScheduleSummary = async () => {
+  console.log("📡 [HOME] Fetching schedule summary", {
+    userId: user?.UserId,
+    userName: user?.UserName
+  });
+
   try {
     const res = await fetch(`${BASE_URL}/api/home/schedule-summary`, {
       method: "POST",
@@ -87,7 +127,24 @@ const fetchScheduleSummary = async () => {
     });
 
     const data = await res.json();
+
+    console.log("📦 [HOME] Schedule summary fetched", {
+      userId: user?.UserId,
+      data
+    });
+
     setScheduleCounts(data);
+console.log("📊 [HOME] Schedule For The Day counts", {
+  userId: user?.UserId,
+  userName: user?.UserName,
+  callPending: data?.call?.pending || 0,
+  callCompleted: data?.call?.completed || 0,
+  visitPending: data?.visit?.pending || 0,
+  visitCompleted: data?.visit?.completed || 0
+});
+    console.log("✅ [HOME] Schedule summary loaded", {
+      userId: user?.UserId
+    });
 
   } catch (err) {
     console.error("❌ Schedule summary fetch failed:", err);
@@ -101,6 +158,7 @@ useEffect(() => {
 }, [user?.UserId]);
 useFocusEffect(
   useCallback(() => {
+    console.log("📱 [HOME] Screen focused");
     if (user?.UserId) {
       loadHomeData(); // ✅ Auto refresh when screen comes back
     }
@@ -121,25 +179,46 @@ useFocusEffect(
 
   {/* 🔥 HISTORY ICON */}
   <TouchableOpacity
-    onPress={() =>
-      navigation.navigate("ActivityHistory", {
-        userId: user?.UserId,
-      })
-    }
+onPress={() => {
+  console.log("🕘 [HOME] Activity history clicked");
+  navigation.navigate("ActivityHistory", {
+    userId: user?.UserId,
+  });
+}}
   >
     <Ionicons name="time-outline" size={26} color="#fff" />
   </TouchableOpacity>
 
   {/* 🚪 LOGOUT ICON */}
   <TouchableOpacity
-    onPress={async () => {
-      await AsyncStorage.removeItem("LOGGED_USER");
+onPress={async () => {
+  try {
+    const savedUser = await AsyncStorage.getItem("LOGGED_USER");
+    const parsedUser = savedUser ? JSON.parse(savedUser) : null;
 
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "Welcome" }],
-      });
-    }}
+    console.log("🚪 [HOME] Logout clicked", {
+      userId: parsedUser?.UserId,
+      userName: parsedUser?.UserName,
+      deviceId: parsedUser?.DeviceId
+    });
+
+    await AsyncStorage.removeItem("LOGGED_USER");
+
+    console.log("✅ [HOME] User logged out", {
+      userId: parsedUser?.UserId,
+      userName: parsedUser?.UserName,
+      deviceId: parsedUser?.DeviceId
+    });
+
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "Welcome" }],
+    });
+
+  } catch (err) {
+    console.log("❌ [HOME] Logout error", err);
+  }
+}}
   >
     <Ionicons name="log-out-outline" size={28} color="#fff" />
   </TouchableOpacity>
@@ -179,12 +258,13 @@ useFocusEffect(
  <TouchableOpacity
   style={styles.tableRow}
   activeOpacity={0.8}
-  onPress={() =>
-    navigation.navigate("TodayScheduleList", {
-      userId: user?.UserId,
-      type: "CALL",
-    })
-  }
+onPress={() => {
+  console.log("📅 [HOME] Today CALL schedule clicked");
+  navigation.navigate("TodayScheduleList", {
+    userId: user?.UserId,
+    type: "CALL",
+  });
+}}
 >
   <Text style={styles.rowLabel}>Call</Text>
   <Text style={styles.rowValue}>{scheduleCounts.call.pending}</Text>
@@ -194,12 +274,13 @@ useFocusEffect(
 <TouchableOpacity
   style={styles.tableRow}
   activeOpacity={0.8}
-  onPress={() =>
-    navigation.navigate("TodayScheduleList", {
-      userId: user?.UserId,
-      type: "VISIT",
-    })
-  }
+onPress={() => {
+  console.log("📅 [HOME] Today VISIT schedule clicked");
+  navigation.navigate("TodayScheduleList", {
+    userId: user?.UserId,
+    type: "VISIT",
+  });
+}}
 >
   <Text style={styles.rowLabel}>Visit</Text>
   <Text style={styles.rowValue}>{scheduleCounts.visit.pending}</Text>

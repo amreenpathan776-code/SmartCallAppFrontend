@@ -13,6 +13,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function NPAScreen({ navigation , route }) {
   const userId = route?.params?.userId;
+  const [userName, setUserName] = useState("");
 const [dpdCounts, setDpdCounts] = useState({
   "0_30": { pending: 0, inProcess: 0, completed: 0 },
   "31_60": { pending: 0, inProcess: 0, completed: 0 },
@@ -20,31 +21,83 @@ const [dpdCounts, setDpdCounts] = useState({
   "90_plus": { pending: 0, inProcess: 0, completed: 0 },
 });
 const [refreshing, setRefreshing] = useState(false);
+useEffect(() => {
+  const loadUser = async () => {
+    const saved = await AsyncStorage.getItem("LOGGED_USER");
+    const user = saved ? JSON.parse(saved) : null;
 
+    if (user) {
+      setUserName(user.UserName);
+
+      console.log("👤 [NPA] User loaded", {
+        userId: user.UserId,
+        userName: user.UserName,
+        deviceId: user.DeviceId
+      });
+    }
+  };
+
+  loadUser();
+}, []);
 const fetchDpdSummary = async () => {
+ console.log("📡 [NPA] Fetching DPD summary", {
+  userId,
+  userName
+});
   try {
     const res = await fetch(`${BASE_URL}/api/npa/dpd-summary-v2`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
+      body: JSON.stringify({
+  userId,
+  userName
+}),
     });
 
     const data = await res.json();
+    console.log("📦 [NPA] DPD summary fetched", {
+  userId,
+  userName,
+  data
+});
     setDpdCounts(data);
+    console.log("📊 [NPA] DPD counts", {
+  userId,
+  userName,
+
+  "0_30": data?.["0_30"],
+  "31_60": data?.["31_60"],
+  "61_90": data?.["61_90"],
+  "90_plus": data?.["90_plus"]
+});
+ const total =
+      (data?.["0_30"]?.pending || 0) +
+      (data?.["31_60"]?.pending || 0) +
+      (data?.["61_90"]?.pending || 0) +
+      (data?.["90_plus"]?.pending || 0);
+
+    console.log("📊 [NPA] Total pending count", {
+      userId,
+      userName,
+      total
+    });
+
   } catch (err) {
-    console.error("❌ DPD summary fetch failed", err);
+    console.error("❌ [NPA] Fetch failed", err?.message);
   }
 };
 
 // ✅ First load (when screen opens first time)
 useEffect(() => {
   if (!userId) return;
+  console.log("📥 [NPA] Initial load", { userId });
   fetchDpdSummary();
 }, [userId]);
 
 // ✅ Auto refresh when you come back to NPA screen
 useFocusEffect(
   useCallback(() => {
+    console.log("📱 [NPA] Screen focused", { userId });
     if (!userId) return;
     fetchDpdSummary();
   }, [userId])
@@ -52,6 +105,7 @@ useFocusEffect(
 
 // ✅ Pull to refresh function
 const onRefresh = async () => {
+  console.log("🔄 [NPA] Pull to refresh");
   setRefreshing(true);
   await fetchDpdSummary();
   setRefreshing(false);
@@ -63,7 +117,12 @@ const onRefresh = async () => {
       {/* ===== HEADER ===== */}
       <View style={styles.header}>
   {/* BACK BUTTON */}
-  <TouchableOpacity onPress={() => navigation.goBack()}>
+  <TouchableOpacity
+   onPress={() => {
+  console.log("⬅️ [NPA] Back pressed");
+  navigation.goBack();
+}}
+>
     <Ionicons name="arrow-back" size={22} color="#fff" />
   </TouchableOpacity>
 
@@ -73,6 +132,7 @@ const onRefresh = async () => {
   {/* HOME BUTTON */}
   <TouchableOpacity
     onPress={async () => {
+      console.log("🏠 [NPA] Home clicked");
       const saved = await AsyncStorage.getItem("LOGGED_USER");
       const user = saved ? JSON.parse(saved) : null;
 
@@ -128,12 +188,17 @@ const onRefresh = async () => {
           key={index}
           style={styles.row}
           activeOpacity={0.7}
-          onPress={() =>
-            navigation.navigate("DPDList", {
-              dpdQueue: item.dpd,
-              userId: userId,
-            })
-          }
+      onPress={() => {
+  console.log("➡️ [NPA] DPD row clicked", {
+    dpd: item.dpd,
+    label: item.label
+  });
+
+  navigation.navigate("DPDList", {
+    dpdQueue: item.dpd,
+    userId: userId,
+  });
+}}
         >
           <Text style={styles.colLabel}>{item.label}</Text>
 

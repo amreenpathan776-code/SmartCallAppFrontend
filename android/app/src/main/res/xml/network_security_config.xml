@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
 
+    <!-- Allow HTTP for Metro & dev -->
     <base-config cleartextTrafficPermitted="true" />
 
+    <!-- Allow HTTP for your backend -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">40.80.79.26</domain>
     </domain-config>

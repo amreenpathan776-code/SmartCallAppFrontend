@@ -32,6 +32,7 @@ const [scheduledTitle, setScheduledTitle] = useState("");
 
   useFocusEffect(
     useCallback(() => {
+      console.log("📱 DPDListScreen focused", { dpdQueue, userId });
       fetchDPDData();
     }, [dpdQueue, userId])
   );
@@ -54,16 +55,40 @@ useEffect(() => {
 
   return unsubscribe;
 }, [navigation, scheduledMode]);
-  const fetchDPDData = async () => {
-    try {
-      const response = await fetch(`${BASE_URL}/api/dpd-list`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dpdQueue, userId }),
-      });
+const fetchDPDData = async () => {
+  console.log("📥 Fetch DPD list", { dpdQueue, userId });
 
-      const result = await response.json();
-      const records = result.records || [];
+  try {
+
+    const saved = await AsyncStorage.getItem("LOGGED_USER");
+    const user = saved ? JSON.parse(saved) : null;
+
+    console.log("👤 Logged user", {
+      userId,
+      userName: user?.UserName || user?.name
+    });
+
+    console.log("🌐 Calling /api/dpd-list");
+
+    const response = await fetch(`${BASE_URL}/api/dpd-list`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dpdQueue,
+        userId,
+        userName: user?.UserName || user?.name
+      }),
+    });
+
+    const result = await response.json();
+    const records = result.records || [];
+console.log("📦 DPD fetched data", {
+  userId,
+  userName: user?.UserName || user?.name,
+  records
+});
+
+console.log("✅ DPD list received", records.length);
 
       const today = new Date().toISOString().split("T")[0];
 
@@ -89,14 +114,28 @@ useEffect(() => {
   };
 
 const fetchScheduledAccounts = async (type) => {
+  const saved = await AsyncStorage.getItem("LOGGED_USER");
+const user = saved ? JSON.parse(saved) : null;
+  console.log("📥 Fetch scheduled accounts", type);
   try {
-    const response = await fetch(`${BASE_URL}/api/recovery/scheduled-list`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, userId }),
-    });
+    console.log("🌐 Calling /api/recovery/scheduled-list", type);
+   const response = await fetch(`${BASE_URL}/api/recovery/scheduled-list`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    type,
+    userId,
+    userName: user?.UserName || user?.name
+  }),
+});
 
     const result = await response.json();
+    console.log("📦 Scheduled accounts fetched", {
+  userId,
+  userName: user?.UserName || user?.name,
+  type,
+  records: result.records
+});
 
     setScheduledData(result.records || []);
     setScheduledMode(true);
@@ -113,41 +152,77 @@ const fetchScheduledAccounts = async (type) => {
   }
 };
 
-  const resetBulk = async (type) => {
-    Alert.alert(
-      "Confirm",
-      `Reset ${selectedAccounts.length} accounts?`,
-      [
-        { text: "Cancel" },
-        {
-          text: "Yes",
-          onPress: async () => {
-            for (const acc of selectedAccounts) {
-              await fetch(`${BASE_URL}/api/recovery/reset-today`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  loanAccountNumber: acc,
-                  type,
-                }),
-              });
-            }
+const resetBulk = async (type) => {
+  console.log("📥 Bulk reset", {
+    type,
+    count: selectedAccounts.length
+  });
 
-            setScheduledMode(false);
-            fetchDPDData();
-          },
+  const saved = await AsyncStorage.getItem("LOGGED_USER");
+  const user = saved ? JSON.parse(saved) : null;
+
+  Alert.alert(
+    "Confirm",
+    `Reset ${selectedAccounts.length} accounts?`,
+    [
+      { text: "Cancel" },
+      {
+        text: "Yes",
+        onPress: async () => {
+          for (const acc of selectedAccounts) {
+
+            // 1️⃣ Reset API
+            await fetch(`${BASE_URL}/api/recovery/reset-today`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                loanAccountNumber: acc,
+                type,
+              }),
+            });
+
+            // 2️⃣ Activity Log API
+            await fetch(`${BASE_URL}/api/activity/log`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                actionCode: "RESET_TO_TODAY",
+                actionLabel:
+                  type === "CALL"
+                    ? "Reset to Call Today"
+                    : "Reset to Visit Today",
+
+                userId: user?.UserId,
+                userName: user?.UserName || user?.name,
+
+                sourceType: "NPA",
+                sourceId: acc,
+
+                metadata: {
+                  resetType: type
+                }
+              }),
+            });
+
+          }
+
+          setScheduledMode(false);
+          fetchDPDData();
         },
-      ]
-    );
-  };
+      },
+    ]
+  );
+};
 
   const onRefresh = async () => {
+    console.log("🔁 Refresh DPD list");
     setRefreshing(true);
     await fetchDPDData();
     setRefreshing(false);
   };
 
   const handleSearch = (text) => {
+    console.log("🔎 Search", text);
     setSearchText(text);
 
     if (text.trim() === "") {
@@ -196,38 +271,67 @@ const formatDateTime = (value) => {
         item.AccountStatus !== "PENDING" && { opacity: 0.6 },
       ]}
       activeOpacity={item.AccountStatus === "PENDING" ? 0.7 : 1}
-      onPress={() => {
-        const today = new Date().toISOString().split("T")[0];
+     onPress={() => {
 
-        const callDate = item.ScheduleCallTimestamp
-          ? new Date(item.ScheduleCallTimestamp).toISOString().split("T")[0]
-          : null;
+console.log("🔘 DPD account clicked", {
+loanAccountNumber: item.loanAccountNumber,
+name: item.firstname,
+mobile: item.mobileNumber,
+status: item.AccountStatus,
+overdueAmount: item.overdueAmount,
+attempt: item.AttemptCount,
+scheduleCall: item.ScheduleCallTimestamp,
+scheduleVisit: item.ScheduleVisitTimestamp,
+userId,
+userName: route?.params?.userName,
+status: item.AccountStatus
+});
 
-        const visitDate = item.ScheduleVisitTimestamp
-          ? new Date(item.ScheduleVisitTimestamp).toISOString().split("T")[0]
-          : null;
+  const today = new Date().toISOString().split("T")[0];
 
-        if (item.AccountStatus === "IN PROCESS") {
-          if (callDate === today || visitDate === today) {
-            Alert.alert(
-              "Scheduled For Today",
-              "This account is scheduled for today. Please open from Schedule For The Day."
-            );
-          } else {
-            Alert.alert(
-              "In Process",
-              "This account is in process. Use reset option."
-            );
-          }
-          return;
-        }
+  const callDate = item.ScheduleCallTimestamp
+    ? new Date(item.ScheduleCallTimestamp).toISOString().split("T")[0]
+    : null;
 
-        navigation.navigate("AccountDetails", {
-          loanAccountNumber: item.loanAccountNumber,
-          visitSource: "ASSIGNED",
-          accountStatus: item.AccountStatus,
-        });
-      }}
+  const visitDate = item.ScheduleVisitTimestamp
+    ? new Date(item.ScheduleVisitTimestamp).toISOString().split("T")[0]
+    : null;
+
+  // 🔶 IN PROCESS
+  if (item.AccountStatus === "IN PROCESS") {
+    if (callDate === today || visitDate === today) {
+      Alert.alert(
+        "Scheduled For Today",
+        "This account is scheduled for today. Please open from Schedule For The Day."
+      );
+    } else {
+      Alert.alert(
+        "In Process",
+        "This account is in process. Use reset option."
+      );
+    }
+    return;
+  }
+
+  // 🔴 COMPLETED
+  if (item.AccountStatus === "COMPLETED") {
+    Alert.alert(
+      "Completed",
+      "Can't open completed accounts"
+    );
+    return;
+  }
+console.log("🔀 Navigating to AccountDetails", item.loanAccountNumber);
+
+  // ✅ PENDING → open normally
+  navigation.navigate("AccountDetails", {
+    loanAccountNumber: item.loanAccountNumber,
+    visitSource: "ASSIGNED",
+    accountStatus: item.AccountStatus,
+  });
+
+}}
+
     >
       <View style={styles.nameRow}>
         <View style={styles.personRow}>
@@ -385,11 +489,12 @@ const formatDateTime = (value) => {
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={18} color="#777" />
         <TextInput
-          style={styles.searchInput}
-          placeholder="Search name / account / mobile"
-          value={searchText}
-          onChangeText={handleSearch}
-        />
+  style={styles.searchInput}
+  placeholder="Search name / account / mobile"
+  placeholderTextColor="#888"
+  value={searchText}
+  onChangeText={handleSearch}
+/>
       </View>
 
       <FlatList
@@ -546,19 +651,23 @@ iconBtn: {
   width: 36,
   alignItems: "center",
 },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    margin: 10,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    elevation: 2,
-  },
+ searchContainer: {
+  flexDirection: "row",
+  alignItems: "center",
+  backgroundColor: "#fff",
+  margin: 10,
+  paddingHorizontal: 10,
+  borderRadius: 8,
+  elevation: 2,
+},
   
 
-  searchInput: { flex: 1, padding: 8, fontSize: 14 },
-
+searchInput: {
+  flex: 1,
+  padding: 8,
+  fontSize: 14,
+  color: "#000",
+},
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
 
 card: {

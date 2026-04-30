@@ -1,12 +1,19 @@
-import React from "react";
+import React, { useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
 import BASE_URL from "./config";
 
 export default function ResetForToday({ route, navigation }) {
 
+useEffect(()=>{
+console.log("📱 ResetForToday screen loaded", route?.params);
+},[]);
+
   const { loanAccountNumber } = route.params;
 
   const confirmReset = (type) => {
+
+console.log("🔘 Reset option clicked", type);
 
     Alert.alert(
       "Confirm Reset",
@@ -15,16 +22,32 @@ export default function ResetForToday({ route, navigation }) {
         { text: "No" },
         {
           text: "Yes",
-          onPress: () => resetSchedule(type)
+         onPress: () => {
+console.log("⚠️ Reset confirmed", type);
+resetSchedule(type);
+}
         }
       ]
     );
   };
 
   const resetSchedule = async (type) => {
+const saved = await AsyncStorage.getItem("LOGGED_USER");
+const user = saved ? JSON.parse(saved) : null;
+
+console.log("👤 Reset user", {
+userId: user?.UserId,
+userName: user?.UserName || user?.name
+});
+console.log("📥 Reset schedule request", {
+loanAccountNumber,
+type,
+userId: user?.UserId,
+userName: user?.UserName || user?.name
+});
 
     try {
-
+console.log("🌐 Calling /api/recovery/reset-today");
       const res = await fetch(`${BASE_URL}/api/recovery/reset-today`, {
         method: "POST",
         headers: {
@@ -36,18 +59,31 @@ export default function ResetForToday({ route, navigation }) {
         })
       });
 
-      const data = await res.json();
+const data = await res.json();
 
-      if (!res.ok) {
-        Alert.alert("Error", data.message || "Reset failed");
-        return;
-      }
+console.log("📦 Reset API response", {
+loanAccountNumber,
+type,
+userId: user?.UserId,
+userName: user?.UserName || user?.name,
+response: data
+});
 
-      Alert.alert("Success", "Moved to today's schedule");
+if (!res.ok) {
+  console.log("❌ Reset failed", data);
+  Alert.alert("Error", data.message || "Reset failed");
+  return;
+}
 
+      console.log("✅ Reset success", type);
+
+Alert.alert("Success", "Moved to today's schedule");
+console.log("🔀 Navigating back after reset");
       navigation.goBack();
 
-    } catch (e) {
+   } catch (e) {
+
+console.log("❌ Reset API error", e);
       Alert.alert("Error", "Server error");
     }
 

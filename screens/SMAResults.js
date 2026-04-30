@@ -20,10 +20,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import {Calendar} from "react-native-calendars";
 import RNPickerSelect from "react-native-picker-select";
 export default function SMAResults({route, navigation}){
+  console.log("📱 SMAResults screen loaded", route?.params);
 
 const [modalStack,setModalStack] = useState([]);  
 const { cluster, branchCode, branchName, irac, mode } = route.params || {};
 const [loading, setLoading] = useState(true);
+const [loggedUser, setLoggedUser] = useState(null);
 const [data, setData] = useState([]);
 const [searchText,setSearchText] = useState("");
 const [sortOption,setSortOption] = useState("");
@@ -79,6 +81,7 @@ const [historyData,setHistoryData] = useState([]);
 const [historyLoading,setHistoryLoading] = useState(false);
 
 const fetchAccountHistory = async (accountNumber) => {
+  console.log("📥 Fetch history", accountNumber);
 
 try{
 
@@ -87,8 +90,15 @@ setHistoryLoading(true);
 const res = await fetch(
 `${BASE_URL}/api/sma/history?accountNumber=${accountNumber}`
 );
-
 const result = await res.json();
+
+console.log("📦 History fetched", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  accountNumber,
+  count: result?.length,
+  data: result
+});
 
 const grouped = {};
 
@@ -123,7 +133,7 @@ setShowHistoryModal(true);
 
 }catch(err){
 
-console.log("History fetch error:",err);
+console.log("❌ History fetch error:",err);
 
 }
 
@@ -270,6 +280,7 @@ return null;
 };
 
 const startSMASession = async (accountNumber) => {
+  console.log("📥 Start SMA session", accountNumber);
 
 try{
 
@@ -277,7 +288,6 @@ if(callSessionId) return;
 
 const user = await getLoggedUser();
 if(!user) return;
-
 const res = await fetch(`${BASE_URL}/api/sma/session/start`,{
 
 method:"POST",
@@ -295,15 +305,26 @@ sourceId:accountNumber
 
 const data = await res.json();
 
+console.log("📦 SMA session response", {
+  userId: user?.UserId,
+  userName: user?.UserName,
+  response: data
+});
+
 setCallSessionId(data.sessionId);
 
 }catch(err){
-console.log("SMA session start error:",err);
+console.log("❌ SMA session start error:",err);
 }
 
 };
 
 const logSMAAction = async (actionCode,actionLabel,metadata=null)=>{
+  console.log("📤 SMA log", {
+actionCode,
+actionLabel,
+metadata
+});
 
 try{
 
@@ -334,12 +355,18 @@ sourceId:selectedAccount?.["Account No."]
 
 const result = await res.json();
 
+console.log("📦 SMA log response", {
+  userId: user?.UserId,
+  userName: user?.UserName,
+  response: result
+});
+
 if(actionCode === "CALL_DIALED_CUSTOMER" || actionCode === "CALL_DIALED_BRANCH"){
 setParentLogId(result.logId);
 }
 
 }catch(err){
-console.log("SMA log error:",err);
+console.log("❌ SMA log error:",err);
 }
 
 };
@@ -411,6 +438,21 @@ return () => subscription.remove();
 
 },[dialedNumber]);
 
+useEffect(() => {
+  const loadUser = async () => {
+    const saved = await AsyncStorage.getItem("LOGGED_USER");
+    const user = saved ? JSON.parse(saved) : null;
+    setLoggedUser(user);
+
+    console.log("👤 SMAResults user loaded", {
+      userId: user?.UserId,
+      userName: user?.UserName
+    });
+  };
+
+  loadUser();
+}, []);
+
 useEffect(()=>{
 
 const backAction = () => {
@@ -439,10 +481,20 @@ return () => backHandler.remove();
 },[modalStack,showCallModal,showBranchContacts,showCustomerNumbers,selectedAccount]);
 
 useEffect(() => {
+console.log("📊 Fetch SMA results", {
+userId: loggedUser?.UserId,
+userName: loggedUser?.UserName,
+cluster,
+branchCode,
+branchName,
+irac,
+mode
+});
 
 const fetchData = async () => {
 
 try {
+console.log("📥 SMA report request started");
 
 const params = new URLSearchParams({
 cluster: cluster || "",
@@ -457,11 +509,21 @@ const response = await fetch(
 
 const result = await response.json();
 
+console.log("📦 SMA results fetched", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  count: result?.length,
+  data: result
+});
+
+console.log("✅ SMA report success", result?.length);
+
 setData(result);
+console.log("📤 SMA report response processed");
 setLoading(false);
 
 } catch (error) {
-console.log("SMA API error:", error);
+console.log("❌ SMA API error:", error);
 }
 
 };
@@ -471,6 +533,19 @@ fetchData();
 }, [cluster, branchCode, branchName, irac]);
 
 const [selectedAccount, setSelectedAccount] = useState(null);
+
+useEffect(() => {
+  const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+
+    if (selectedAccount) {
+      e.preventDefault();
+      setSelectedAccount(null);
+    }
+
+  });
+
+  return unsubscribe;
+}, [navigation, selectedAccount]);
 
 useEffect(() => {
   if (!selectedAccount) return;
@@ -736,12 +811,18 @@ return (
 } 
 
 const deleteSMAAlternate = async (number) => {
+
+console.log("⚠️ Delete alternate clicked", number);
+
   try {
 
     const savedUser = await AsyncStorage.getItem("LOGGED_USER");
     const user = savedUser ? JSON.parse(savedUser) : null;
-
-    await fetch(`${BASE_URL}/api/account/delete-alternate`,{
+console.log("📥 Delete alternate request", {
+account:selectedAccount["Account No."],
+number
+});
+  const res = await fetch(`${BASE_URL}/api/account/delete-alternate`,{
       method:"POST",
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -750,7 +831,7 @@ const deleteSMAAlternate = async (number) => {
         deletedBy: user?.UserName   // ⭐ send username
       })
     });
-
+console.log("✅ Alternate deleted", number);
     setCustomerNumbers(prev =>
       prev.filter(n => n.AlternateNumber !== number)
     );
@@ -761,20 +842,38 @@ const deleteSMAAlternate = async (number) => {
       "Alternate Number Deleted",
       { phoneNumber:number }
     );
+const result = await res.json();
 
+console.log("📦 Alternate delete response", {
+  userId: user?.UserId,
+  userName: user?.UserName,
+  response: result
+});
   } catch(err){
-    console.log("Delete SMA error:",err);
+    console.log("❌ Delete alternate number error:",err);
   }
 };
 
 const fetchCustomerNumbers = async () => {
+console.log("📥 Fetch customer numbers", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  accountNumber: selectedAccount?.["Account No."]
+});
   try {
     const res = await fetch(
       `${BASE_URL}/api/customer-numbers?accountNumber=${selectedAccount["Account No."]}`
     );
 
     const data = await res.json();
-
+console.log("📦 Customer numbers fetched", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  accountNumber: selectedAccount?.["Account No."],
+  count: data?.length,
+  data
+});
+console.log("✅ Customer numbers loaded", data?.length);
     if (Array.isArray(data)) {
       // keep full list
       setCustomerNumbers(data);
@@ -791,7 +890,7 @@ const fetchCustomerNumbers = async () => {
     }
 
   } catch (err) {
-    console.log("Fetch numbers error:", err);
+   console.log("❌ Fetch customer numbers error:", err);
   }
 };
 
@@ -884,9 +983,17 @@ paddingHorizontal:8
 
 <TextInput
 placeholder="Search Account No / Name / IRAC"
+placeholderTextColor="#888"
 value={searchText}
-onChangeText={setSearchText}
-style={{flex:1,fontSize:14}}
+onChangeText={(text)=>{
+console.log("🔎 Search typing", text);
+setSearchText(text);
+}}
+style={{
+  flex:1,
+  fontSize:14,
+  color:"#000"
+}}
 />
 
 {searchText.length > 0 && (
@@ -931,6 +1038,9 @@ position:"relative"
 <RNPickerSelect
 value={sortOption}
 onValueChange={(value)=>{
+
+console.log("↕️ Sort selected", value);
+
 setSortOption(value);
 }}
 items={[
@@ -986,7 +1096,17 @@ renderItem={({item})=>(
 
     <TouchableOpacity
   style={styles.smaCard}
-  onPress={() => setSelectedAccount(item)}
+onPress={() => {
+
+console.log("🔘 Account selected", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  accountNumber: item["Account No."]
+});
+
+setSelectedAccount(item)
+
+}}
 >
 
 <View style={styles.cardHeader}>
@@ -1081,24 +1201,37 @@ setModalStack([]);
 <TouchableOpacity
 style={styles.modalButton}
 onPress={async () => {
-
+console.log("🔘 CALL NOW clicked");
 pushModal("CALL_OPTION");
 setShowCallModal(false);
 
 try{
 
+console.log("📥 Fetch branch contacts", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  branchCode: selectedAccount["Br Code"]
+});
 const response = await fetch(
 `${BASE_URL}/api/branch-contacts?branchCode=${selectedAccount["Br Code"]}`
 );
 
 const result = await response.json();
 
+console.log("📦 Branch contacts fetched", {
+  userId: loggedUser?.UserId,
+  userName: loggedUser?.UserName,
+  branchCode: selectedAccount["Br Code"],
+  count: result?.length,
+  data: result
+});
+
 setBranchContacts(result);
 
 setShowBranchContacts(true);
 
 }catch(err){
-console.log("Branch contacts error:",err);
+console.log("❌ Branch contacts error:",err);
 }
 
 }}
@@ -1334,6 +1467,7 @@ onPress={()=>deleteSMAAlternate(item.AlternateNumber)}
 
 <TextInput
 placeholder="Add Alternate Number"
+placeholderTextColor="#888"
 keyboardType="numeric"
 maxLength={10}
 value={alternateNumber}
@@ -1381,7 +1515,10 @@ try{
 
 const user = await AsyncStorage.getItem("LOGGED_USER");
 const parsedUser = user ? JSON.parse(user) : null;
-
+console.log("📥 Save alternate request", {
+account:selectedAccount["Account No."],
+alternateNumber
+});
 const res = await fetch(`${BASE_URL}/api/account/save-alternate`,{
   method:"POST",
   headers:{'Content-Type':'application/json'},
@@ -1390,6 +1527,14 @@ const res = await fetch(`${BASE_URL}/api/account/save-alternate`,{
     alternateNumber,
     addedBy: parsedUser?.UserName || "UNKNOWN"
   })
+});
+
+const responseData = await res.json();
+
+console.log("📦 Alternate save response", {
+  userId: parsedUser?.UserId,
+  userName: parsedUser?.UserName,
+  response: responseData
 });
 
 if(res.ok){
@@ -1406,11 +1551,10 @@ await logSMAAction(
 setAlternateNumber("");
 
 alert("Alternate number saved");
-
+console.log("✅ Alternate saved", alternateNumber);
 }
-
 }catch(err){
-console.log(err);
+console.log("❌ Save alternate error:", err);
 }
 
 }}
@@ -1523,11 +1667,15 @@ callStage === "SPOKE"
 : "Call Completed - Not Spoke"
 );
 
+console.log("📥 End SMA session", callSessionId);
+
 await fetch(`${BASE_URL}/api/sma/session/end`,{
 method:"POST",
 headers:{"Content-Type":"application/json"},
 body:JSON.stringify({sessionId:callSessionId})
 });
+
+console.log("✅ SMA session ended", callSessionId);
 
 setCallSessionId(null);
 setShowCallFlowModal(false);
@@ -1666,11 +1814,15 @@ setHour("10");
 setMinute("00");
 setAmpm("AM");
 
+console.log("📥 End SMA session", callSessionId);
+
 await fetch(`${BASE_URL}/api/sma/session/end`,{
 method:"POST",
 headers:{"Content-Type":"application/json"},
 body:JSON.stringify({sessionId:callSessionId})
 });
+
+console.log("✅ SMA session ended", callSessionId);
 
 setCallSessionId(null);
 
@@ -1703,6 +1855,7 @@ Enter the Response
 
 <TextInput
 placeholder="Enter reason"
+placeholderTextColor="#888"
 value={otherReason}
 onChangeText={setOtherReason}
 multiline
@@ -1716,6 +1869,7 @@ padding:14,
 marginBottom:18,
 height:120,
 fontSize:15,
+color:"#000",
 backgroundColor:"#f8fafc"
 }}
 />
@@ -1923,11 +2077,15 @@ await logSMAAction("CALL_BUSY","Customer Busy");
 
 alert("Customer Busy");
 
+console.log("📥 End SMA session", callSessionId);
+
 await fetch(`${BASE_URL}/api/sma/session/end`,{
 method:"POST",
 headers:{"Content-Type":"application/json"},
 body:JSON.stringify({sessionId:callSessionId})
 });
+
+console.log("✅ SMA session ended", callSessionId);
 
 setCallSessionId(null);
 setShowCallFlowModal(false);
@@ -1947,11 +2105,15 @@ await logSMAAction("CALL_NOT_REACHABLE","Customer Not Reachable");
 
 alert("Customer Not Reachable");
 
+console.log("📥 End SMA session", callSessionId);
+
 await fetch(`${BASE_URL}/api/sma/session/end`,{
 method:"POST",
 headers:{"Content-Type":"application/json"},
 body:JSON.stringify({sessionId:callSessionId})
 });
+
+console.log("✅ SMA session ended", callSessionId);
 
 setCallSessionId(null);
 setShowCallFlowModal(false);
@@ -1971,11 +2133,15 @@ await logSMAAction("INVALID_NUMBER","Invalid Number");
 
 alert("Invalid Number");
 
+console.log("📥 End SMA session", callSessionId);
+
 await fetch(`${BASE_URL}/api/sma/session/end`,{
 method:"POST",
 headers:{"Content-Type":"application/json"},
 body:JSON.stringify({sessionId:callSessionId})
 });
+
+console.log("✅ SMA session ended", callSessionId);
 
 setCallSessionId(null);
 setShowCallFlowModal(false);
@@ -2409,11 +2575,15 @@ Specify a different reason
 
     alert("Response Saved");
 
-    await fetch(`${BASE_URL}/api/sma/session/end`,{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({sessionId:callSessionId})
-    });
+ console.log("📥 End SMA session", callSessionId);
+
+await fetch(`${BASE_URL}/api/sma/session/end`,{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({sessionId:callSessionId})
+});
+
+console.log("✅ SMA session ended", callSessionId);
 
     setCallSessionId(null);
 
@@ -2606,12 +2776,30 @@ renderItem={({item})=>(
 <View style={{marginTop:15}}>
 
 <Text style={{
-fontWeight:"bold",
-fontSize:14,
-marginBottom:6,
-color:"#0a3d62"
+  fontWeight:"bold",
+  fontSize:14,
+  marginBottom:6,
+  color:"#0a3d62"
 }}>
-{new Date(item.logs[0]?.CreatedAt).toLocaleString("en-IN")}
+{(() => {
+  const raw = item?.logs?.[0]?.CreatedAt;
+  if (!raw) return "";
+
+  const clean = raw.replace("Z", "");
+  const d = new Date(clean);
+
+  const day = String(d.getDate()).padStart(2,"0");
+  const month = String(d.getMonth()+1).padStart(2,"0");
+  const year = d.getFullYear();
+
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2,"0");
+
+  const ampm = hours >= 12 ? "pm" : "am";
+  hours = hours % 12 || 12;
+
+  return `${day}/${month}/${year}, ${hours}:${minutes} ${ampm}`;
+})()}
 </Text>
 
 {item.logs?.map((log,i)=>(
